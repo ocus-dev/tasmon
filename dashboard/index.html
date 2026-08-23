@@ -158,9 +158,9 @@
       const diagnosticText = diagnostic ? ` · tab ${diagnostic.activeTab ?? "?"} · swaps ${diagnostic.swapCount ?? 0} · target ${diagnostic.target?.id ?? "none"}` : "";
       const swaps = Array.isArray(last?.swapped) ? last.swapped : last?.swapped ? [last.swapped] : [];
       const swapText = swaps.length ? `Swapped in ${swaps.length} Ultra${swaps.length === 1 ? "" : "s"} (${swaps.map((swap) => swap.id).join(", ")}); leveling at 8-5${diagnosticText}` : "";
-      $("ultraLevelingStatus").textContent = leveling.lastError ? `Error: ${leveling.lastError}${diagnosticText}` : !leveling.enabled ? "Automation off" : last?.complete ? "Complete: every Ultra is level 90+" : last?.blocked ? `Blocked: ${last.blocked} Ultra monster${last.blocked === 1 ? "" : "s"} on expedition` : leveling.running ? `Running stage 8-5 · ${last?.remaining ?? "--"} Ultra monsters below 90${diagnosticText}` : swapText || `Enabled; checking party and stage${diagnosticText}`;
+      $("ultraLevelingStatus").textContent = leveling.lastError ? `Error: ${leveling.lastError}${diagnosticText}` : !leveling.enabled ? "Automation off" : last?.complete ? "Complete: every awakened Ultra is level 90+" : last?.blocked ? `Blocked: ${last.blocked} awakened Ultra${last.blocked === 1 ? "" : "s"} on expedition` : leveling.running ? `Running stage 8-5 · ${last?.remaining ?? "--"} awakened Ultras below 90${diagnosticText}` : swapText || `Enabled; checking party and stage${diagnosticText}`;
       $("ultraLevelingConsole").textContent = leveling.logs?.length
-        ? leveling.logs.map((entry) => `${new Date(entry.at).toLocaleTimeString()} | ${entry.message}${entry.detail ? `\n  ${JSON.stringify(entry.detail)}` : ""}`).join("\n")
+        ? leveling.logs.map((entry) => `${new Date(entry.at).toLocaleTimeString()} | ${entry.message}`).join("\n")
         : "Ultra leveling console waiting.";
     }
     function renderEggChart(drops, sessionDrops) {

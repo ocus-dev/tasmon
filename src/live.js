@@ -745,7 +745,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     }
   };
   const ultraAutomationTimer = setInterval(runUltraAutomation, 5_000);
-  const ultraLeveling = { enabled: false, running: false, last: null, lastError: null, logs: [] };
+  const ultraLeveling = { enabled: false, running: false, last: null, lastError: null, logs: [], levels: new Map(), restored: false };
   const logUltraLeveling = (message, detail = null) => {
     ultraLeveling.logs.push({ at: Date.now(), message, detail });
     if (ultraLeveling.logs.length > 80) ultraLeveling.logs.splice(0, ultraLeveling.logs.length - 80);
@@ -753,17 +753,30 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
   const runUltraLeveling = async () => {
     if (!ultraLeveling.enabled || ultraLeveling.running) return;
     ultraLeveling.running = true;
-    logUltraLeveling("Run started");
     try {
       ultraLeveling.last = await evaluateRuntime(levelUltraExpression(), endpoint, { awaitPromise: true });
       ultraLeveling.lastError = ultraLeveling.last?.error ?? null;
-      logUltraLeveling(ultraLeveling.lastError ? `Error: ${ultraLeveling.lastError}` : "Run result", ultraLeveling.last);
+      if (ultraLeveling.lastError) {
+        logUltraLeveling(`Error: ${ultraLeveling.lastError}`);
+      } else {
+        for (const monster of ultraLeveling.last?.debug?.trainable ?? []) {
+          const previousLevel = ultraLeveling.levels.get(monster.id);
+          if (previousLevel !== undefined && monster.level > previousLevel) {
+            logUltraLeveling(`${monster.id} leveled to ${monster.level}`);
+          }
+          ultraLeveling.levels.set(monster.id, monster.level);
+        }
+        for (const swap of ultraLeveling.last?.swapped ?? []) logUltraLeveling(`${swap.id} swapped in`);
+        if (ultraLeveling.last?.complete && ultraLeveling.last.restored && !ultraLeveling.restored) {
+          logUltraLeveling("All awakened Ultras leveled; original party restored at 10-9");
+          ultraLeveling.restored = true;
+        }
+      }
     } catch (error) {
       ultraLeveling.lastError = error.message;
       logUltraLeveling(`Runtime error: ${error.message}`);
     } finally {
       ultraLeveling.running = false;
-      logUltraLeveling("Run finished");
     }
   };
   const ultraLevelingTimer = setInterval(runUltraLeveling, 5_000);
@@ -902,6 +915,10 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
       try {
         const body = await readRequestBody(request);
         ultraLeveling.enabled = body.enabled === true;
+        if (!ultraLeveling.enabled) {
+          ultraLeveling.levels.clear();
+          ultraLeveling.restored = false;
+        }
         if (ultraLeveling.enabled) await runUltraLeveling();
         response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         response.end(JSON.stringify({ enabled: ultraLeveling.enabled, running: ultraLeveling.running, last: ultraLeveling.last, lastError: ultraLeveling.lastError, logs: ultraLeveling.logs }));
@@ -1225,15 +1242,15 @@ function levelUltraExpression() {
     const state = debug?.state;
     if (!state) return { error: "TASMON debug object is unavailable" };
     const speciesMeta = ${JSON.stringify(speciesMeta)};
+    const session = window.__ultraLevelingSession ??= { originalParty: [...(state.party ?? [])] };
     const expeditions = new Set((state.expeditions ?? []).flatMap((group) => Array.isArray(group) ? group : (group.members ?? [])));
-    const ultra = Object.values(state.monsters ?? {}).filter((monster) => speciesMeta[monster.speciesId]?.rarity === "ultra" && (monster.level ?? 1) < 90);
+    const ultra = Object.values(state.monsters ?? {}).filter((monster) => speciesMeta[monster.speciesId]?.rarity === "ultra" && (monster.awakening ?? 0) > 0 && (monster.level ?? 1) < 90);
     const trainable = ultra.filter((monster) => !expeditions.has(monster.id));
-    if (ultra.length === 0) return { complete: true, blocked: 0, remaining: 0, offParty: 0, swapped: null, stage: "complete", loop: "complete" };
-    if (trainable.length === 0) return { complete: false, blocked: ultra.length, remaining: ultra.length, offParty: 0, swapped: null, stage: "blocked", loop: "blocked" };
+    if (trainable.length === 0 && ultra.length > 0) return { complete: false, blocked: ultra.length, remaining: ultra.length, offParty: 0, swapped: [], stage: "blocked", loop: "blocked" };
     const party = state.party ?? [];
     const remaining = trainable.filter((monster) => !party.includes(monster.id));
     const targetForParty = (currentParty) => currentParty.map((id, index) => ({ id, index, monster: state.monsters?.[id] }))
-      .filter(({ monster }) => monster && monster.speciesId !== "valkyrie" && !(speciesMeta[monster.speciesId]?.rarity === "ultra" && (monster.level ?? 1) < 90))
+      .filter(({ index, monster }) => index > 0 && monster && !(speciesMeta[monster.speciesId]?.rarity === "ultra" && (monster.level ?? 1) < 90))
       .sort((left, right) => right.index - left.index)[0];
     const target = targetForParty(party);
     const debugInfo = () => ({
@@ -1353,6 +1370,26 @@ function levelUltraExpression() {
       button.click();
       return "loop-enabled";
     };
+    const restoreParty = async () => {
+      const restored = [];
+      for (let index = 1; index < session.originalParty.length; index += 1) {
+        const desiredId = session.originalParty[index];
+        if (state.party?.[index] === desiredId) continue;
+        const currentId = state.party?.[index];
+        if (!currentId) return { error: "Original party member is unavailable", restored };
+        const result = await dragMonsterToSlot(desiredId, currentId, index);
+        if (result.error) return { error: result.error, restored };
+        restored.push({ id: desiredId, slot: index });
+      }
+      return { restored };
+    };
+    if (ultra.length === 0) {
+      const partyResult = await restoreParty();
+      if (partyResult.error) return { error: partyResult.error, complete: true, restored: false, swapped: [], debug: debugInfo() };
+      const stage = await stageNode("[10-9]");
+      const loop = await loopNode("[10-9]");
+      return { complete: true, restored: true, blocked: 0, remaining: 0, offParty: 0, swapped: [], restoredParty: partyResult.restored, stage, loop, debug: debugInfo() };
+    }
     const stage = await stageNode("[8-5]");
     const loop = await loopNode("[8-5]");
     return { remaining: ultra.length, blocked: ultra.length - trainable.length, offParty: remaining.length, swapped, stage, loop, debug: debugInfo() };
