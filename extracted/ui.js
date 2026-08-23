@@ -16714,6 +16714,8 @@ window.__scanOverflow = () => {
 window.__battleDebug = () => ({
   scene, // ライブ参照(scene.castSkill(...)などをプレビューから直接呼べる)
   state, // ライブ参照(テスト用: モンスター注入→renderBreed()等で検証できる)
+  enhanceRollSlot, // ライブ参照(細工ヘルパーの指定スロット抽選用)
+  renderCube, // ライブ参照(細工画面の再描画用)
   renderBreed, // ライブ参照(配合ウィンドウの再描画)
   renderHud, // ライブ参照(HUD・宝箱チップの再描画。テスト検証用)
   scene, // ライブ参照(戦闘演出の実機検査用: verify-battle-flash)

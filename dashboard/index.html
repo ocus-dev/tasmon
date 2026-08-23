@@ -36,6 +36,7 @@
     .egg-automation{display:flex;flex-wrap:wrap;align-items:center;gap:14px;border:2px solid var(--line);background:linear-gradient(145deg,#fffdf0,var(--panel2));padding:14px;box-shadow:var(--shadow)}.egg-automation label{display:flex;align-items:center;gap:7px;color:var(--blue-deep);font-weight:800}.egg-automation input{width:18px;height:18px;accent-color:var(--green)}.egg-automation-status{color:var(--muted);font:11px Consolas,monospace;flex:1;min-width:220px}
     .automation-controls{display:flex;flex-wrap:wrap;align-items:end;gap:12px;border:2px solid var(--line);background:linear-gradient(145deg,#fffdf0,var(--panel2));padding:14px;box-shadow:var(--shadow)}.automation-controls label{display:flex;flex-direction:column;gap:4px;color:var(--blue-deep);font:700 11px Consolas,monospace;text-transform:uppercase}.automation-controls select,.automation-controls input[type=number]{border:2px solid var(--line);background:var(--cream);color:var(--ink);padding:8px;min-width:130px}.automation-confirm{display:flex!important;flex-direction:row!important;align-items:center;gap:7px;padding-bottom:9px}.automation-confirm input{width:18px;height:18px;accent-color:var(--green)}.automation-status{margin-top:12px;color:var(--muted);font:12px Consolas,monospace}.automation-log{margin-top:12px;min-height:150px;max-height:300px;overflow:auto;border:2px solid var(--line);background:#071b2d;color:#9ee7b2;padding:14px;white-space:pre-wrap;font:12px/1.5 Consolas,monospace}
     .ultra-debug{margin-top:12px;min-height:180px;max-height:380px;overflow:auto;border:2px solid var(--line);background:#071b2d;color:#9ee7b2;padding:14px;white-space:pre-wrap;font:12px/1.5 Consolas,monospace}.turbo-console,.automation-log,.ultra-debug{user-select:text;-webkit-user-select:text;cursor:text}
+    .etch-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:end;border:2px solid var(--line);background:linear-gradient(145deg,#fffdf0,var(--panel2));padding:14px;box-shadow:var(--shadow)}.etch-controls label{display:flex;flex-direction:column;gap:4px;color:var(--blue-deep);font:700 11px Consolas,monospace;text-transform:uppercase}.etch-controls select{min-width:170px;border:2px solid var(--line);background:var(--cream);color:var(--ink);padding:8px}.etch-item-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:9px;margin-top:14px}.etch-item{border:2px solid var(--line);background:var(--cream);padding:11px;text-align:left;cursor:pointer;color:var(--ink)}.etch-item.selected{border-color:var(--green);box-shadow:0 0 0 3px rgba(47,154,86,.25)}.etch-item strong,.etch-item span{display:block}.etch-item span,.etch-slot small{color:var(--muted);font:11px Consolas,monospace}.etch-slots,.etch-pool{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin-top:12px}.etch-slot{border:1px solid var(--line);background:var(--panel2);padding:10px;text-align:left;cursor:pointer}.etch-slot.selected{border:2px solid var(--amber)}.etch-slot b{display:block;color:var(--blue-deep)}.etch-log{margin-top:12px;min-height:100px;max-height:240px;overflow:auto;border:2px solid var(--line);background:#071b2d;color:#9ee7b2;padding:14px;white-space:pre-wrap;font:12px/1.5 Consolas,monospace}
   </style>
 </head>
 <body>
@@ -45,7 +46,7 @@
       <div class="status" id="status"><span class="status-dot"></span><small>CONNECTING</small></div>
     </header>
     <div class="actions"><div class="meta"><span id="stage">Stage --</span><span id="wave">Wave --</span><span id="session">Session --</span><span id="total">Total --</span><span id="elapsed">Elapsed --</span></div><div><button class="button" id="reset" type="button">Reset session</button></div></div>
-    <nav class="tabs" aria-label="Dashboard views"><button class="tab active" data-tab="ratesPanel">Battle rates</button><button class="tab" data-tab="eggsPanel">Egg drops</button><button class="tab" data-tab="skillsPanel">Skills</button><button class="tab" data-tab="awakeningsPanel">Awakenings</button><button class="tab" data-tab="turboPanel">Turbo</button><button class="tab" data-tab="automationPanel">Automation</button></nav>
+    <nav class="tabs" aria-label="Dashboard views"><button class="tab active" data-tab="ratesPanel">Battle rates</button><button class="tab" data-tab="eggsPanel">Egg drops</button><button class="tab" data-tab="skillsPanel">Skills</button><button class="tab" data-tab="awakeningsPanel">Awakenings</button><button class="tab" data-tab="etchingPanel">Etching</button><button class="tab" data-tab="turboPanel">Turbo</button><button class="tab" data-tab="automationPanel">Automation</button></nav>
     <div id="skillsPanel" class="tab-panel"><section class="section"><div class="section-head"><div class="label">Skill reference</div><div class="note">Browse by skill type</div></div><div id="skillRollReference"></div><div id="skillTabs" class="skill-tabs"></div><div id="skillsContent"></div><p class="note skill-disclaimer">The listed signature species is the skill's natural owner, not its exclusive owner. Signature skills are excluded from the standard level-milestone pool, but higher-star signature skills can appear in the rare-choice slot and can also be inherited through breeding.</p></section></div>
     <div id="ratesPanel" class="tab-panel active">
     <section class="cards">
@@ -83,6 +84,15 @@
         <div class="awaken-summary"><article><span>Current tier</span><strong id="awakeningCurrent">--</strong></article><article><span>Copies selected</span><strong id="awakeningCount">0</strong></article><article><span>Guaranteed tiers</span><strong id="awakeningGuaranteed">0</strong></article><article><span>Ritual chance</span><strong id="awakeningChance">0%</strong></article><article><span>Remaining copies</span><strong id="awakeningRemaining">--</strong></article></div>
         <div class="awaken-batch-actions"><button class="button" id="awakeningSelectAll" type="button">Select all safe copies</button><button class="button" id="awakeningClear" type="button">Clear selection</button><button class="button" id="awakeningDo" type="button" disabled>Awaken selected</button><span class="awaken-result" id="awakeningResult"></span></div>
         <div class="awaken-mons" id="awakeningMons"></div>
+      </section>
+    </div>
+    <div id="etchingPanel" class="tab-panel">
+      <section class="section"><div class="section-head"><div class="label">Etching helper</div><div class="note">Choose an item, a modifier, then a slot to roll</div></div>
+        <div class="etch-controls"><label>Quality<select id="etchQuality"><option value="all">All etchable gear</option></select></label><label>Location<select id="etchLocation"><option value="all">All locations</option><option value="equipped">Equipped</option><option value="storage">Storage</option><option value="inventory">Inventory</option></select></label><label>Monster<select id="etchMonster"><option value="all">All monsters</option></select></label><label>Type<select id="etchType"><option value="all">All types</option></select></label><button class="button" id="etchRefresh" type="button">Refresh items</button></div>
+        <div class="etch-item-grid" id="etchItems"></div>
+        <div class="section-head" style="margin-top:24px"><div class="label">2 / Modifier</div><div class="note" id="etchPoolNote">Select an item first</div></div><div class="etch-pool" id="etchPool"></div>
+        <div class="section-head" style="margin-top:24px"><div class="label">3 / Slot</div><div class="note">Filled slots are shown for comparison and protection</div></div><div class="etch-slots" id="etchSlots"></div>
+        <div class="actions"><span class="meta" id="etchStatus">Choose an item, modifier, and slot.</span><div><button class="button" id="etchStart" type="button" disabled>Start rolling</button> <button class="button" id="etchStop" type="button">Stop</button></div></div><pre class="etch-log" id="etchLog" tabindex="0">Etching helper waiting.</pre>
       </section>
     </div>
     <div id="turboPanel" class="tab-panel">
@@ -163,6 +173,66 @@
         ? leveling.logs.map((entry) => `${new Date(entry.at).toLocaleTimeString()} | ${entry.message}`).join("\n")
         : "Ultra leveling console waiting.";
     }
+    let etchingData = null;
+    let etchingRefreshBusy = false;
+    let etchingPollingUntil = 0;
+    let etchingItemId = null;
+    let etchingTarget = null;
+    let etchingSlot = null;
+    const etchingNames = {
+      common: "Common", rare: "Rare", ultra: "Ultra", legend: "Legend", immortal: "Immortal", arcana: "Arcana", beyond: "Beyond", century: "Century", cosmic: "Cosmic", celestial: "Celestial",
+      weapon: "Sword", sub: "Shield", armor: "Armor", helm: "Helmet", boots: "Boots", charm: "Charm", unknown: "Gear",
+      carve: "Carving", inscribe: "Inscription", adorn: "Adornment", atkFlat: "Attack", hpFlat: "Health", atkPct: "Attack %", hpPct: "Health %", defPct: "Defense %", critRate: "Critical Rate", critDmg: "Critical Damage", cdr: "Cooldown Reduction", goldBonus: "Gold Gain", expBonus: "Experience Gain", dropBonus: "Egg Drop", atkSpeed: "Attack Speed", skillPower: "Skill Power", skillAoe: "Area Skill Power", chestBonus: "Chest Drop", lifesteal: "Life Steal", bossDmg: "Boss Damage", elemAtk: "Elemental Attack", elemDef: "Elemental Defense", soulVessel: "Soul Vessel",
+      inventory: "Inventory", storage: "Storage", equipped: "Equipped", Empty: "Empty", earring: "Earring", necklace: "Necklace", ring: "Ring",
+    };
+    const englishName = (key) => etchingNames[key] ?? String(key ?? "Unknown").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[-_]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+    const itemName = (item) => item.name && !/[ぁ-んァ-ン一-龯]|Ã|Â|ç|ã/.test(item.name) ? item.name : `${englishName(item.rarity)} ${englishName(item.part)}`;
+    const monsterName = (id, data) => data?.monsterNames?.[id] && !/^mon[_-]/i.test(data.monsterNames[id]) ? data.monsterNames[id] : englishName(data?.monsterNames?.[id] ?? id).replace(/^Mon /i, "");
+    const etchingLabel = (key) => englishName(key);
+    function renderEtching() {
+      if (!etchingData) return;
+      const quality = $("etchQuality").value;
+      const location = $("etchLocation").value;
+      const monster = $("etchMonster");
+      const type = $("etchType");
+      const monsterOptions = [...new Map(etchingData.items.filter((item) => item.location === "equipped" && item.equippedBy).map((item) => [item.equippedBy, monsterName(item.equippedBy, etchingData)])).entries()].sort((left, right) => left[1].localeCompare(right[1]));
+      const monsterValue = monster.value;
+      monster.innerHTML = `<option value="all">All monsters</option>${monsterOptions.map(([id, name]) => `<option value="${id}">${name}</option>`).join("")}`;
+      monster.value = monsterOptions.some(([id]) => id === monsterValue) ? monsterValue : "all";
+      const typeOptions = [...new Map(etchingData.items.map((item) => {
+        const key = item.part === "charm" ? (item.charmKind || "charm") : item.part;
+        return [key, englishName(key)];
+      }))].sort((left, right) => left[1].localeCompare(right[1]));
+      const typeValue = type.value;
+      type.innerHTML = `<option value="all">All types</option>${typeOptions.map(([key, label]) => `<option value="${key}">${label}</option>`).join("")}`;
+      type.value = typeOptions.some(([key]) => key === typeValue) ? typeValue : "all";
+      const items = etchingData.items.filter((item) => {
+        const itemType = item.part === "charm" ? (item.charmKind || "charm") : item.part;
+        return (quality === "all" || item.rarity === quality) && (location === "all" || item.location === location) && (monster.value === "all" || item.equippedBy === monster.value) && (type.value === "all" || itemType === type.value);
+      });
+      if (!items.some((item) => item.id === etchingItemId)) { etchingItemId = items[0]?.id ?? null; etchingTarget = null; etchingSlot = null; }
+      $("etchItems").innerHTML = items.length ? items.map((item) => `<button class="etch-item${item.id === etchingItemId ? " selected" : ""}" type="button" data-etch-item="${item.id}"><strong>${itemName(item)}</strong><span>${englishName(item.rarity)} · ${englishName(item.part)} · Lv ${item.lv}</span><span>${englishName(item.location)}${item.equippedBy ? ` · equipped by ${monsterName(item.equippedBy, etchingData)}` : ""}${item.locked ? " · Locked" : ""}</span></button>`).join("") : `<div class="etch-item">No etchable items match these filters.</div>`;
+      $("etchItems").querySelectorAll("[data-etch-item]").forEach((button) => button.addEventListener("click", () => { etchingItemId = button.dataset.etchItem; etchingTarget = null; etchingSlot = null; renderEtching(); }));
+      const item = etchingData.items.find((candidate) => candidate.id === etchingItemId);
+      $("etchPoolNote").textContent = item ? `${englishName(item.poolCategory)} pool · select one modifier` : "Select an item first";
+      $("etchPool").innerHTML = item ? item.pool.map((entry) => { const key = entry.stat ?? entry.skill; const label = entry.stat ? englishName(key) : `Skill: ${englishName(key)}`; return `<button class="etch-slot${key === etchingTarget ? " selected" : ""}" type="button" data-etch-target="${key}"><b>${label}</b><small>${etchingLabel(entry.grade)}${entry.stat ? ` · ${number(entry.range[0] * 100, 1)}-${number(entry.range[1] * 100, 1)}%` : ""}</small></button>`; }).join("") : "";
+      $("etchPool").querySelectorAll("[data-etch-target]").forEach((button) => button.addEventListener("click", () => { etchingTarget = button.dataset.etchTarget; renderEtching(); }));
+      $("etchSlots").innerHTML = item ? item.slots.map((kind, index) => { const line = item.enhances[index]; const current = line ? englishName(line.stat ?? line.skill ?? "unknown") : "Empty"; return `<button class="etch-slot${index === etchingSlot ? " selected" : ""}" type="button" data-etch-slot="${index}"><b>Slot ${index + 1} · ${englishName(kind)}</b><small>${line ? `${current} · ${etchingLabel(line.grade)}` : current}</small></button>`; }).join("") : "";
+      $("etchSlots").querySelectorAll("[data-etch-slot]").forEach((button) => button.addEventListener("click", () => { etchingSlot = Number(button.dataset.etchSlot); renderEtching(); }));
+      const startConditions = [
+        !etchingData.unlocked ? "etching is locked" : null,
+        !item ? "no item selected" : null,
+        !etchingTarget ? "no modifier selected" : null,
+        etchingSlot === null ? "no slot selected" : null,
+        etchingData.running ? "already rolling" : null,
+      ].filter(Boolean);
+      const start = $("etchStart");
+      start.disabled = startConditions.length > 0;
+      start.title = startConditions.length ? `Cannot start: ${startConditions.join(", ")}` : "Start etching rolls";
+      $("etchStatus").textContent = etchingData.error ? `Error: ${etchingData.error}` : etchingData.running ? `Rolling ${etchingData.attempts} times...` : startConditions.length ? `Cannot start: ${startConditions.join(", ")}` : item ? `${itemName(item)} · ${etchingTarget ? englishName(etchingTarget) : "choose modifier"} · ${etchingSlot === null ? "choose slot" : `slot ${etchingSlot + 1}`}` : "Choose an item, modifier, and slot.";
+      $("etchLog").textContent = etchingData.last ? `Attempts: ${etchingData.attempts}\nAction: ${etchingData.last.action ?? "unknown"}\n${etchingData.last.error ? `Action error: ${etchingData.last.error}` : etchingData.last.matches ? `Found ${englishName(etchingData.last.after?.stat ?? etchingData.last.after?.skill)}` : `Last roll: ${englishName(etchingData.last.after?.stat ?? etchingData.last.after?.skill ?? "unknown")}`}` : etchingData.running ? `Rolling ${etchingData.attempts} times...` : startConditions.length ? `Waiting: ${startConditions.join(", ")}` : "Etching helper waiting.";
+    }
+    async function loadEtching() { if (etchingRefreshBusy) return; etchingRefreshBusy = true; try { const response = await fetch(`/api/etching?t=${Date.now()}`, { cache: "no-store" }); const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "Etching inventory unavailable"); etchingData = data; const quality = $("etchQuality"); if (quality.options.length === 1) quality.innerHTML += Object.entries(etchingData.meta.rarities).filter(([, meta]) => meta.stars >= 4).map(([id]) => `<option value="${id}">${englishName(id)}</option>`).join(""); renderEtching(); } finally { etchingRefreshBusy = false; } }
     function renderEggChart(drops, sessionDrops) {
       const wrap = $("eggChartWrap");
       if (!window.Chart) { wrap.innerHTML = `<div class="chart-empty">Chart library unavailable.</div>`; return; }
@@ -272,6 +342,7 @@
         renderUltraAutomation(data.ultraAutomation);
         renderUltraLeveling(data.ultraLeveling);
         renderCrafting(data.crafting);
+        if (etchingData?.running || etchingPollingUntil > Date.now()) loadEtching().catch(() => {});
         $("turboPulse").classList.toggle("turbo-active", data.turbo === true);
         $("turboPulse").textContent = data.turbo === true ? "Turbo running" : "Start Turbo";
         $("turboPhase").textContent = `Phase ${data.turboPhase ?? "idle"}`;
@@ -511,6 +582,42 @@
         renderUltraLeveling(data);
       } catch (error) { $("ultraLevelingStatus").textContent = `Error: ${error.message}`; }
     });
+    $("etchQuality").addEventListener("change", renderEtching);
+    $("etchLocation").addEventListener("change", renderEtching);
+    $("etchMonster").addEventListener("change", renderEtching);
+    $("etchType").addEventListener("change", renderEtching);
+    $("etchRefresh").addEventListener("click", () => loadEtching().catch((error) => { $("etchStatus").textContent = `Error: ${error.message}`; }));
+    $("etchStart").addEventListener("click", async () => {
+      const item = etchingData?.items.find((candidate) => candidate.id === etchingItemId);
+      const conditions = [
+        !etchingData?.unlocked ? "etching is locked" : null,
+        !item ? "no item selected" : null,
+        !etchingTarget ? "no modifier selected" : null,
+        etchingSlot === null ? "no slot selected" : null,
+        etchingData?.running ? "already rolling" : null,
+      ].filter(Boolean);
+      if (conditions.length) {
+        const message = `Cannot start: ${conditions.join(", ")}`;
+        $("etchStatus").textContent = message;
+        $("etchLog").textContent = message;
+        console.warn("[Etching] Start blocked", { conditions, itemId: etchingItemId, slotIdx: etchingSlot, target: etchingTarget });
+        return;
+      }
+      if (item.enhances[etchingSlot] && !window.confirm("This will overwrite the current modifier in the selected slot. Continue?")) return;
+      console.info("[Etching] Start requested", { itemId: etchingItemId, slotIdx: etchingSlot, target: etchingTarget });
+      try {
+        const response = await fetch("/api/etching", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ itemId: etchingItemId, slotIdx: etchingSlot, target: etchingTarget }) });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error ?? "Unable to start etching");
+        console.info("[Etching] Start accepted", data);
+        etchingPollingUntil = Date.now() + 30000;
+        etchingData = { ...etchingData, ...data };
+        renderEtching();
+        loadEtching().catch(() => {});
+      } catch (error) { console.error("[Etching] Start request failed", error); $("etchStatus").textContent = `Error: ${error.message}`; }
+    });
+    $("etchStop").addEventListener("click", async () => { etchingPollingUntil = 0; await fetch("/api/etching", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ stop: true }) }); await loadEtching(); });
+    loadEtching().catch((error) => { $("etchStatus").textContent = `Error: ${error.message}`; });
     $("craftStart").addEventListener("click", async () => {
       if (!$("craftConfirm").checked) { $("craftStatus").textContent = "Check the confirmation before starting."; return; }
       const button = $("craftStart"); button.disabled = true;

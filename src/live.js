@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { evaluateRuntime } from "./cdp.js";
 import { AWAKENING, AWAKEN_MAX, DEX_BUFF_CAPS, EGG_DROP_CHANCE, JOBS, PERKS, RARITY_META, RARITY_ORDER, SKILLS, SPECIES, dexTotals, skillStars } from "../extracted/data.js";
+import { ENHANCE_GRADES, ENHANCE_KINDS, ENHANCE_PART_CAT_LABEL, ENHANCE_PART_POOLS, ENHANCE_ROLL_COSTS, STAT_META, enhancePartCat, enhanceSlotsOf } from "../extracted/equipment.js";
 import { resolvePartyAttack } from "./real-stats.js";
 import { renderReport } from "./report.js";
 import { runCraftController } from "./craft-controller.js";
@@ -24,6 +25,16 @@ const STAGES_PER_DIFFICULTY = 10;
 const KPM_HISTORY_LIMIT = 3601;
 const RARE_CHOICE_BASE = 0.08;
 const RARE_CHOICE_PER_STAR = 0.012;
+
+const etchingMeta = {
+  rarities: Object.fromEntries(Object.entries(RARITY_META).map(([id, meta]) => [id, { label: meta.label, stars: meta.stars, color: meta.color }])),
+  kinds: ENHANCE_KINDS,
+  grades: ENHANCE_GRADES,
+  stats: STAT_META,
+  pools: ENHANCE_PART_POOLS,
+  poolLabels: ENHANCE_PART_CAT_LABEL,
+  costs: ENHANCE_ROLL_COSTS,
+};
 
 export function selectAwakeningRitual(monsters, random = Math.random) {
   const eligible = monsters.filter((monster) => (monster.awakening ?? 0) < 6);
@@ -780,6 +791,33 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     }
   };
   const ultraLevelingTimer = setInterval(runUltraLeveling, 5_000);
+  const etching = { running: false, stop: false, itemId: null, slotIdx: null, target: null, attempts: 0, last: null, error: null };
+  const runEtching = async () => {
+    if (etching.running) return;
+    etching.running = true;
+    etching.stop = false;
+    etching.attempts = 0;
+    etching.error = null;
+    try {
+      while (!etching.stop && etching.attempts < 5000) {
+        const result = await evaluateRuntime(etchingRollExpression(etching.itemId, etching.slotIdx, etching.target), endpoint, { awaitPromise: true });
+        etching.attempts += 1;
+        etching.last = result;
+        if (etching.attempts <= 3 || result?.error || result?.matches) {
+          console.log(`[etching] attempt=${etching.attempts} action=${result?.action ?? "unknown"} matches=${Boolean(result?.matches)} error=${result?.error ?? "none"}`);
+        }
+        if (result?.error || result?.matches) break;
+      }
+      if (!etching.stop && !etching.last?.matches && !etching.last?.error && !etching.error) {
+        etching.error = "Etching did not find the selected modifier within 5,000 rolls";
+        console.warn(`[etching] stopped after ${etching.attempts} rolls without a match`, etching.last);
+      }
+    } catch (error) {
+      etching.error = error.message;
+    } finally {
+      etching.running = false;
+    }
+  };
   const craftAutomation = {
     running: false,
     mode: "both",
@@ -909,6 +947,45 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     if (pathname === "/api/crafting" && request.method === "GET") {
       response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
       response.end(JSON.stringify(craftStatus()));
+      return;
+    }
+    if (pathname === "/api/etching" && request.method === "GET") {
+      try {
+        const snapshot = await evaluateRuntime(etchingSnapshotExpression(), endpoint);
+        const items = (snapshot?.items ?? []).map((item) => ({
+          ...item,
+          slots: enhanceSlotsOf(item),
+          pool: ENHANCE_PART_POOLS[enhancePartCat(item.part)] ?? [],
+          poolCategory: enhancePartCat(item.part),
+          poolLabel: ENHANCE_PART_CAT_LABEL[enhancePartCat(item.part)] ?? enhancePartCat(item.part),
+        }));
+        response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        response.end(JSON.stringify({ ...snapshot, meta: etchingMeta, items, running: etching.running, attempts: etching.attempts, last: etching.last, error: etching.error }));
+      } catch (error) {
+        response.writeHead(502, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ error: error.message }));
+      }
+      return;
+    }
+    if (pathname === "/api/etching" && request.method === "POST") {
+      try {
+        const body = await readRequestBody(request);
+        if (body.stop === true) {
+          etching.stop = true;
+        } else {
+          if (etching.running) throw new Error("Etching is already running");
+          if (typeof body.itemId !== "string" || !Number.isInteger(body.slotIdx) || typeof body.target !== "string") throw new Error("Choose an item, modifier, and slot");
+          etching.itemId = body.itemId;
+          etching.slotIdx = body.slotIdx;
+          etching.target = body.target;
+          void runEtching();
+        }
+        response.writeHead(202, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        response.end(JSON.stringify({ running: etching.running, attempts: etching.attempts, last: etching.last, error: etching.error }));
+      } catch (error) {
+        response.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ error: error.message }));
+      }
       return;
     }
     if (pathname === "/api/ultra-leveling" && request.method === "POST") {
@@ -1393,5 +1470,147 @@ function levelUltraExpression() {
     const stage = await stageNode("[8-5]");
     const loop = await loopNode("[8-5]");
     return { remaining: ultra.length, blocked: ultra.length - trainable.length, offParty: remaining.length, swapped, stage, loop, debug: debugInfo() };
+  })()`;
+}
+
+function etchingSnapshotExpression() {
+  return `(() => {
+    const debug = window.__battleDebug?.();
+    const state = debug?.state;
+    if (!state) return { error: "TASMON debug object is unavailable" };
+    const equippedBy = new Map(Object.values(state.monsters ?? {}).flatMap((monster) => (monster.equipment ?? []).map((item) => [item.id, monster.id])));
+    const monsterNames = Object.fromEntries(Object.values(state.monsters ?? {}).map((monster) => [monster.id, monster.nameEn || (monster.name && !/[ぁ-んァ-ン一-龯]|Ã|Â|ç|ã/.test(monster.name) ? monster.name : null) || monster.speciesId || monster.id]));
+    const project = (item, location) => ({
+      id: item.id, name: item.nameEn || item.name || item.id, rarity: item.rarity ?? "common", part: item.part ?? "unknown", charmKind: item.charmKind ?? null,
+      lv: item.lv ?? 1, locked: Boolean(item.locked), location, equippedBy: equippedBy.get(item.id) ?? null,
+      enhances: (item.enhances ?? []).map((line) => line ? { ...line } : null),
+    });
+    const items = [
+      ...(state.items ?? []).map((item) => project(item, "inventory")),
+      ...(state.storage ?? []).map((item) => project(item, "storage")),
+      ...Object.values(state.monsters ?? {}).flatMap((monster) => (monster.equipment ?? []).map((item) => project(item, "equipped"))),
+    ];
+    return { gold: state.gold ?? 0, unlocked: Boolean(debug.enhanceRollSlot) || (state.bossClearedD?.[0] ?? 0) >= 10, items, monsterNames };
+  })()`;
+}
+
+function etchingRollExpression(itemId, slotIdx, target) {
+  return `(async () => {
+    const debug = window.__battleDebug?.();
+    const state = debug?.state;
+    if (!state) return { error: "TASMON debug object is unavailable" };
+    const before = [...(state.items ?? []), ...(state.storage ?? []), ...Object.values(state.monsters ?? {}).flatMap((monster) => monster.equipment ?? [])]
+      .find((item) => item.id === ${JSON.stringify(itemId)})?.enhances?.[${Number(slotIdx)}] ?? null;
+    const selectedItem = [...(state.items ?? []), ...(state.storage ?? []), ...Object.values(state.monsters ?? {}).flatMap((monster) => monster.equipment ?? [])]
+      .find((item) => item.id === ${JSON.stringify(itemId)});
+    if (typeof debug.enhanceRollSlot === "function") {
+      const result = debug.enhanceRollSlot(state, ${JSON.stringify(itemId)}, ${Number(slotIdx)});
+      if (result.error) return { error: result.error, before };
+      const after = result.after ?? null;
+      const matches = ${JSON.stringify(target)} === (after?.stat ?? after?.skill);
+      return { ok: true, cost: result.cost, before, after, matches, action: "debug" };
+    }
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const text = (node) => node?.textContent?.replace(/\\s+/g, " ").trim() ?? "";
+    const visible = (node) => {
+      if (!node || node.classList.contains("hidden")) return false;
+      const box = node.getBoundingClientRect();
+      return getComputedStyle(node).display !== "none" && getComputedStyle(node).visibility !== "hidden" && box.width > 0 && box.height > 0;
+    };
+    const compoundTab = document.querySelector('.bar-tab[data-win="compound"]');
+    if (compoundTab) compoundTab.click();
+    await sleep(120);
+    let cubeBody = document.querySelector("#cube-body");
+    let mode = cubeBody?.querySelector("select.cube-band");
+    if (!mode) return { error: "Enhance window is unavailable", before };
+    const enhanceOption = [...mode.options].find((option) => option.value === "enhance");
+    if (!enhanceOption) return { error: "Etching is locked in the game", before };
+    if (mode.value !== "enhance") {
+      mode.value = "enhance";
+      mode.dispatchEvent(new Event("change", { bubbles: true }));
+      await sleep(120);
+    }
+    const source = (state.items ?? []).some((item) => item.id === ${JSON.stringify(itemId)}) ? "inv" : (state.storage ?? []).some((item) => item.id === ${JSON.stringify(itemId)}) ? "storage" : null;
+    const equippedMonster = Object.values(state.monsters ?? {}).find((monster) => (monster.equipment ?? []).some((item) => item.id === ${JSON.stringify(itemId)}));
+    if (!source && !equippedMonster) return { error: "Selected item no longer exists", before };
+    if (source) {
+      const sourceTab = document.querySelector('.bar-tab[data-win="' + source + '"]');
+      if (sourceTab && !visible(document.querySelector("#" + source + "-panel"))) sourceTab.click();
+      await sleep(150);
+    } else {
+      let monsterCell = document.querySelector('.mon-cell[data-mon="' + CSS.escape(equippedMonster.id) + '"]');
+      if (!monsterCell) {
+        const boxTab = document.querySelector('.bar-tab[data-win="box"]');
+        if (boxTab) boxTab.click();
+        await sleep(100);
+        monsterCell = document.querySelector('.mon-cell[data-mon="' + CSS.escape(equippedMonster.id) + '"]');
+      }
+      if (!monsterCell) return { error: "Equipped monster is not visible in the game UI", before };
+      monsterCell.click();
+      await sleep(150);
+    }
+    const sortOrder = ["common", "rare", "ultra", "legend", "immortal", "arcana", "beyond", "century", "cosmic", "celestial"];
+    const sourceItems = source ? [...(source === "inv" ? state.items : state.storage)].sort((left, right) => sortOrder.indexOf(right.rarity) - sortOrder.indexOf(left.rarity) || (right.obtainedAt ?? 0) - (left.obtainedAt ?? 0)) : [];
+    const itemIndex = sourceItems.findIndex((item) => item.id === ${JSON.stringify(itemId)});
+    if (source && itemIndex < 0) return { error: "Selected item is not visible in the game list", before };
+    const pageSize = 42;
+    const page = source === "storage" ? Math.floor(itemIndex / pageSize) : 0;
+    if (source === "storage") {
+      const pageButton = [...document.querySelectorAll("#storage-panel .page-tab")][page];
+      if (pageButton) pageButton.click();
+      await sleep(100);
+    }
+    const activeGrid = source ? document.querySelector(source === "storage" ? "#storage-panel .storage-grid" : "#inv-panel .inv-grid, #items-panel .inv-grid") : null;
+    const activeCells = activeGrid ? [...activeGrid.querySelectorAll(".inv-cell")] : [];
+    const localIndex = source === "storage" ? itemIndex % pageSize : itemIndex;
+    const itemOffset = source ? Math.max(0, activeCells.length - (source === "storage" ? Math.min(pageSize, sourceItems.length - page * pageSize) : sourceItems.length)) : 0;
+    let itemCell = source ? activeCells[itemOffset + localIndex] : null;
+    if (!source) {
+      const monster = equippedMonster;
+      const item = monster.equipment.find((entry) => entry.id === ${JSON.stringify(itemId)});
+      const part = item.part ?? "weapon";
+      const charmKinds = ["earring", "necklace", "ring"];
+      const equipmentIndex = part === "charm"
+        ? 5 + charmKinds.indexOf(item.charmKind ?? "ring")
+        : ({ weapon: 0, armor: 1, helm: 2, sub: 3, boots: 4 }[part] ?? -1);
+      const heroCells = [...document.querySelectorAll("#detail-panel .hero-equip-cell")];
+      itemCell = heroCells[equipmentIndex];
+    }
+    if (!itemCell || !visible(itemCell)) return { error: "Selected item cell is not visible", before };
+    if (source) {
+      itemCell.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
+    } else {
+      const cubeSlot = document.querySelector("#cube-body #cube-grid .cube-slot");
+      if (!cubeSlot || typeof DataTransfer === "undefined") return { error: "Enhance item drop target is unavailable", before };
+      const transfer = new DataTransfer();
+      transfer.setData("text/plain", "item:" + ${JSON.stringify(itemId)} + ":equipped");
+      itemCell.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: transfer }));
+      cubeSlot.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: transfer }));
+      cubeSlot.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }));
+      itemCell.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer: transfer }));
+    }
+    await sleep(120);
+    const ladders = { legend: ["adorn", "inscribe"], immortal: ["adorn", "inscribe", "carve"], arcana: ["adorn", "inscribe", "carve", "adorn"], beyond: ["adorn", "inscribe", "carve", "adorn", "inscribe"], century: ["adorn", "inscribe", "carve", "adorn", "inscribe", "carve"], cosmic: ["adorn", "inscribe", "carve", "adorn", "inscribe", "carve", "adorn"], celestial: ["adorn", "inscribe", "carve", "adorn", "inscribe", "carve", "adorn", "inscribe"] };
+    const item = source ? sourceItems[itemIndex] : selectedItem;
+    if (!item) return { error: "Selected item no longer exists", before };
+    const slots = ladders[item.rarity] ?? [];
+    const displayOrder = slots.map((_, index) => index).sort((left, right) => ({ adorn: 0, inscribe: 1, carve: 2 }[slots[left]] ?? 9) - ({ adorn: 0, inscribe: 1, carve: 2 }[slots[right]] ?? 9) || left - right);
+    const slotButtons = [...document.querySelectorAll("#cube-body .enh-slot-chip")];
+    const slotButton = slotButtons[displayOrder.indexOf(${Number(slotIdx)})];
+    if (!slotButton) return { error: "Selected etching slot is not visible", before };
+    slotButton.click();
+    await sleep(60);
+    const roll = document.querySelector("#cube-body .enh-tiers button");
+    if (!roll || roll.disabled) return { error: "Etching roll button is unavailable", before };
+    roll.click();
+    if (before) { await sleep(60); roll.click(); }
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const current = [...(state.items ?? []), ...(state.storage ?? []), ...Object.values(state.monsters ?? {}).flatMap((monster) => monster.equipment ?? [])].find((entry) => entry.id === ${JSON.stringify(itemId)})?.enhances?.[${Number(slotIdx)}] ?? null;
+      if (current && JSON.stringify(current) !== JSON.stringify(before)) {
+        return { ok: true, cost: null, before, after: current, matches: ${JSON.stringify(target)} === (current.stat ?? current.skill), action: "ui" };
+      }
+      await sleep(50);
+    }
+    return { error: "Visible etching roll did not update the item", before };
   })()`;
 }
