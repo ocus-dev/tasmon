@@ -745,6 +745,28 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     }
   };
   const ultraAutomationTimer = setInterval(runUltraAutomation, 5_000);
+  const ultraLeveling = { enabled: false, running: false, last: null, lastError: null, logs: [] };
+  const logUltraLeveling = (message, detail = null) => {
+    ultraLeveling.logs.push({ at: Date.now(), message, detail });
+    if (ultraLeveling.logs.length > 80) ultraLeveling.logs.splice(0, ultraLeveling.logs.length - 80);
+  };
+  const runUltraLeveling = async () => {
+    if (!ultraLeveling.enabled || ultraLeveling.running) return;
+    ultraLeveling.running = true;
+    logUltraLeveling("Run started");
+    try {
+      ultraLeveling.last = await evaluateRuntime(levelUltraExpression(), endpoint, { awaitPromise: true });
+      ultraLeveling.lastError = ultraLeveling.last?.error ?? null;
+      logUltraLeveling(ultraLeveling.lastError ? `Error: ${ultraLeveling.lastError}` : "Run result", ultraLeveling.last);
+    } catch (error) {
+      ultraLeveling.lastError = error.message;
+      logUltraLeveling(`Runtime error: ${error.message}`);
+    } finally {
+      ultraLeveling.running = false;
+      logUltraLeveling("Run finished");
+    }
+  };
+  const ultraLevelingTimer = setInterval(runUltraLeveling, 5_000);
   const craftAutomation = {
     running: false,
     mode: "both",
@@ -857,7 +879,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     if (pathname === "/api/live") {
       await refreshTurboState();
       response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
-      response.end(JSON.stringify({ ...metrics.read(), turbo: turboEnabled, turboPhase, turboKeys, turboStack, turboLastAction, turboLog, ultraAutomation: { ...ultraAutomation }, crafting: craftStatus() }));
+      response.end(JSON.stringify({ ...metrics.read(), turbo: turboEnabled, turboPhase, turboKeys, turboStack, turboLastAction, turboLog, ultraAutomation: { ...ultraAutomation }, ultraLeveling: { enabled: ultraLeveling.enabled, running: ultraLeveling.running, last: ultraLeveling.last, lastError: ultraLeveling.lastError, logs: ultraLeveling.logs }, crafting: craftStatus() }));
       return;
     }
     if (pathname === "/api/report") {
@@ -874,6 +896,19 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     if (pathname === "/api/crafting" && request.method === "GET") {
       response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
       response.end(JSON.stringify(craftStatus()));
+      return;
+    }
+    if (pathname === "/api/ultra-leveling" && request.method === "POST") {
+      try {
+        const body = await readRequestBody(request);
+        ultraLeveling.enabled = body.enabled === true;
+        if (ultraLeveling.enabled) await runUltraLeveling();
+        response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        response.end(JSON.stringify({ enabled: ultraLeveling.enabled, running: ultraLeveling.running, last: ultraLeveling.last, lastError: ultraLeveling.lastError, logs: ultraLeveling.logs }));
+      } catch (error) {
+        response.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ error: error.message }));
+      }
       return;
     }
     if (pathname === "/api/crafting" && request.method === "POST") {
@@ -1034,6 +1069,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
   server.on("close", () => {
     clearInterval(timer);
     clearInterval(ultraAutomationTimer);
+    clearInterval(ultraLevelingTimer);
     stopCraftAutomation();
     if (turboRefreshTimer) clearInterval(turboRefreshTimer);
   });
@@ -1047,7 +1083,7 @@ function ultraAutomationExpression({ open, condense }) {
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const debug = window.__battleDebug?.();
     const state = debug?.state;
-    if (!state) return { error: "TASMON debug object is unavailable" };
+    if (!state) return { error: "TASMON debug object is unavailable", debug: { url: location.href } };
     const result = { opened: 0, condensed: 0, protectedAwakeningSix: 0, skipped: [] };
     const speciesMeta = ${JSON.stringify(speciesMeta)};
     const ultraEggIndexes = () => (state.eggs ?? []).map((egg, index) => ({ egg, index })).filter(({ egg }) => egg.rarity === "ultra");
@@ -1178,5 +1214,147 @@ function ultraAutomationExpression({ open, condense }) {
       }
     }
     return result;
+  })()`;
+}
+
+function levelUltraExpression() {
+  const speciesMeta = Object.fromEntries(Object.entries(SPECIES).map(([id, species]) => [id, { rarity: species.rarity }]));
+  return `(async () => {
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const debug = window.__battleDebug?.();
+    const state = debug?.state;
+    if (!state) return { error: "TASMON debug object is unavailable" };
+    const speciesMeta = ${JSON.stringify(speciesMeta)};
+    const expeditions = new Set((state.expeditions ?? []).flatMap((group) => Array.isArray(group) ? group : (group.members ?? [])));
+    const ultra = Object.values(state.monsters ?? {}).filter((monster) => speciesMeta[monster.speciesId]?.rarity === "ultra" && (monster.level ?? 1) < 90);
+    const trainable = ultra.filter((monster) => !expeditions.has(monster.id));
+    if (ultra.length === 0) return { complete: true, blocked: 0, remaining: 0, offParty: 0, swapped: null, stage: "complete", loop: "complete" };
+    if (trainable.length === 0) return { complete: false, blocked: ultra.length, remaining: ultra.length, offParty: 0, swapped: null, stage: "blocked", loop: "blocked" };
+    const party = state.party ?? [];
+    const remaining = trainable.filter((monster) => !party.includes(monster.id));
+    const targetForParty = (currentParty) => currentParty.map((id, index) => ({ id, index, monster: state.monsters?.[id] }))
+      .filter(({ monster }) => monster && monster.speciesId !== "valkyrie" && !(speciesMeta[monster.speciesId]?.rarity === "ultra" && (monster.level ?? 1) < 90))
+      .sort((left, right) => right.index - left.index)[0];
+    const target = targetForParty(party);
+    const debugInfo = () => ({
+      url: location.href,
+      activeTab: document.querySelector(".bar-tab.active")?.dataset.win ?? null,
+      barTabs: [...document.querySelectorAll(".bar-tab")].map((tab) => ({ text: tab.textContent.trim(), className: tab.className, win: tab.dataset.win ?? null })),
+      partyState: party.map((id) => ({ id, speciesId: state.monsters?.[id]?.speciesId ?? null })),
+      partyCells: [...document.querySelectorAll(".hero-party-cell")].map((cell) => ({ id: cell.dataset.mon, className: cell.className, hasSwap: Boolean(cell.querySelector(".party-swap-btn")) })),
+      swapCount: document.querySelectorAll(".party-swap-btn").length,
+      heroTabs: [...document.querySelectorAll(".hero-tab")].map((tab) => ({ text: tab.textContent.trim(), className: tab.className })),
+      inventoryControls: [...document.querySelectorAll("button")].map((button) => ({ text: button.textContent.trim(), className: button.className, title: button.title })).filter((button) => /item|box|mon|tasmon|持ち物|タスモン/i.test(button.text + " " + button.title + " " + button.className)).slice(0, 40),
+      map: { bodies: document.querySelectorAll("#map-body").length, portals: document.querySelectorAll(".portal-node-label").length, maps: document.querySelectorAll(".portal-map").length, labels: [...document.querySelectorAll(".portal-node-label")].map((label) => label.textContent.trim()), tabs: [...document.querySelectorAll(".portal-tab")].map((tab) => ({ text: tab.textContent.trim(), className: tab.className })), modes: [...document.querySelectorAll(".portal-mode-pill")].map((mode) => ({ text: mode.textContent.trim(), className: mode.className })) },
+      partyMarkup: [...document.querySelectorAll(".hero-party-cell")].map((cell) => cell.outerHTML.slice(0, 500)),
+      target: target ? { id: target.id, index: target.index } : null,
+      trainable: trainable.map((monster) => ({ id: monster.id, level: monster.level ?? 1 })),
+    });
+    const waitForCell = async (selector, attempts = 20) => {
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        const cell = document.querySelector(selector);
+        if (cell) return cell;
+        await sleep(100);
+      }
+      return null;
+    };
+    const waitForPartySwap = async (monsterId, attempts = 30) => {
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        const cell = [...document.querySelectorAll(".hero-party-cell")].find((candidate) => candidate.dataset.mon === monsterId);
+        const swap = cell?.querySelector(".party-swap-btn");
+        if (swap) return swap;
+        await sleep(100);
+      }
+      return null;
+    };
+    const dragMonsterToSlot = async (candidateId, targetId, targetIndex) => {
+      const targetCell = [...document.querySelectorAll(".hero-party-cell")].find((cell) => cell.dataset.mon === targetId);
+      let candidateCell = document.querySelector('.mon-cell[data-mon="' + CSS.escape(candidateId) + '"]');
+      if (!candidateCell) {
+        const candidateSelector = '.mon-cell[data-mon="' + CSS.escape(candidateId) + '"]';
+        const allMons = document.querySelector(".fav-boxlist-btn");
+        if (allMons) { allMons.click(); await sleep(200); }
+        candidateCell = await waitForCell(candidateSelector, 5);
+        const pageButtons = [...document.querySelectorAll(".page-tab")];
+        for (const pageButton of pageButtons) {
+          if (candidateCell) break;
+          pageButton.click();
+          candidateCell = await waitForCell(candidateSelector, 5);
+        }
+      }
+      if (!targetCell || !candidateCell) return { error: "Drag/drop party controls unavailable", targetFound: Boolean(targetCell), candidateFound: Boolean(candidateCell) };
+      const dataTransfer = new DataTransfer();
+      dataTransfer.setData("text/plain", "mon:" + candidateId);
+      candidateCell.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer }));
+      targetCell.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer }));
+      targetCell.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        if (state.party?.[targetIndex] === candidateId) return { targetFound: true, candidateFound: true };
+        await sleep(100);
+      }
+      return { error: "Party drag/drop did not update party state", targetFound: true, candidateFound: true };
+    };
+    const swapped = [];
+    for (let swapIndex = 0; swapIndex < 2; swapIndex += 1) {
+      const currentParty = state.party ?? [];
+      const currentTarget = targetForParty(currentParty);
+      const candidate = trainable.find((monster) => !currentParty.includes(monster.id));
+      if (!candidate || !currentTarget) break;
+      const heroTab = document.querySelector('.bar-tab[data-win="hero"]');
+      if (heroTab) heroTab.click();
+      const partyTab = [...document.querySelectorAll(".hero-tab")].find((tab) => /パーティ編成|party/i.test(tab.textContent));
+      if (partyTab) partyTab.click();
+      const swap = await waitForPartySwap(currentTarget.id);
+      const allMons = document.querySelector(".fav-boxlist-btn");
+      if (allMons) { allMons.click(); await sleep(200); }
+      if (swap) {
+        swap.click();
+        await sleep(150);
+        const cell = await waitForCell('.mon-cell[data-mon="' + CSS.escape(candidate.id) + '"]');
+        if (!cell) return { error: "Ultra monster is not visible in the Tasmon list", remaining: trainable.length, blocked: ultra.length - trainable.length, swapped, debug: debugInfo() };
+        cell.click();
+        await sleep(250);
+      } else {
+        const dragResult = await dragMonsterToSlot(candidate.id, currentTarget.id, currentTarget.index);
+        if (dragResult.error) return { error: dragResult.error, remaining: trainable.length, blocked: ultra.length - trainable.length, swapped, debug: { ...debugInfo(), drag: dragResult, heroTabCount: document.querySelectorAll(".hero-tab").length, partyTabFound: Boolean(partyTab) } };
+      }
+      swapped.push({ id: candidate.id, level: candidate.level ?? 1, replaced: currentTarget.id, slot: currentTarget.index });
+    }
+    const stageNode = async (labelText) => {
+      const mapTab = document.querySelector('.bar-tab[data-win="map"]')
+        ?? [...document.querySelectorAll(".bar-tab")].find((tab) => /map|地図/i.test(tab.textContent));
+      let label = [...document.querySelectorAll(".portal-node-label")].find((candidate) => candidate.textContent.includes(labelText));
+      if (!label && mapTab) {
+        mapTab.click();
+        await sleep(250);
+        label = [...document.querySelectorAll(".portal-node-label")].find((candidate) => candidate.textContent.includes(labelText));
+      }
+      if (!label) {
+        const area = labelText.startsWith("[") ? labelText.slice(1, labelText.indexOf("-")) : null;
+        const areaTab = [...document.querySelectorAll(".portal-tab")].find((tab) => area && (tab.textContent.includes("第" + area + "幕") || tab.textContent.includes("Act " + area) || tab.textContent.trim() === area));
+        if (areaTab) {
+          areaTab.click();
+          await sleep(250);
+          label = [...document.querySelectorAll(".portal-node-label")].find((candidate) => candidate.textContent.includes(labelText));
+        }
+      }
+      const node = label?.previousElementSibling;
+      if (!node) return "missing-stage";
+      if (node.classList.contains("locked")) return "locked-stage";
+      if (node.classList.contains("current")) return "already-stage";
+      node.click();
+      return "stage-moved";
+    };
+    const loopNode = async (labelText) => {
+      const label = [...document.querySelectorAll(".portal-node-label")].find((candidate) => candidate.textContent.includes(labelText));
+      const button = label?.parentElement?.querySelector(".portal-loop");
+      if (!button) return "missing-loop";
+      if (button.classList.contains("on")) return "already-looping";
+      button.click();
+      return "loop-enabled";
+    };
+    const stage = await stageNode("[8-5]");
+    const loop = await loopNode("[8-5]");
+    return { remaining: ultra.length, blocked: ultra.length - trainable.length, offParty: remaining.length, swapped, stage, loop, debug: debugInfo() };
   })()`;
 }
