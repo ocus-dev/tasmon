@@ -26,7 +26,7 @@ Usage:
   npm start -- simulate-kpm [save-json-path] [difficulty] [stage] [--live] [--target-kpm 600] [--party-attack N] [--attacks-per-sec N]
   npm start -- export-save <output-path> [port] [backup]
   npm start -- render-report <save-json-path> [output-path]
-  npm start -- live [port] [cdp-port]
+  npm start -- live [port] [cdp-port] [--host <address>] [--lan]
   npm start -- turbo [endpoint]
   npm start -- craft [max-runs] [cdp-port] [gear|charm|both] --confirm [--loop] [--min-atk-pct 0.9] [--min-skill-power 0.4]
   npm start -- constellation [port] [save-json-path]
@@ -39,7 +39,7 @@ Commands:
   simulate-kpm  Simulate the damage and speed required to reach a target kills/minute.
   export-save   Read the save from a local DevTools port into a project file.
   render-report Generate a standalone HTML attack calculation report.
-  live          Start the localhost read-only battle-rate dashboard.
+  live          Start the read-only battle-rate dashboard (localhost by default).
   turbo         POST to the turbo endpoint every 10 seconds.
   craft         Automate the existing game craft controls after confirmation (gear, charm, or both).
   constellation Start the interactive read-only perk constellation viewer.
@@ -169,9 +169,13 @@ async function runExportSave(args) {
 async function runLive(args) {
   const port = Number(args.shift() ?? 4173);
   const cdpPort = args.shift() ?? "9222";
+  const lan = args.includes("--lan");
+  const hostIndex = args.indexOf("--host");
+  const host = lan ? "0.0.0.0" : hostIndex === -1 ? "127.0.0.1" : String(args[hostIndex + 1] ?? "").trim();
+  if (!host || host.startsWith("--")) throw new Error("--host requires an address");
   const runtime = await loadGameRuntime(defaultArchive, path.join(projectRoot, ".runtime"));
-  const server = await startLiveDashboard({ port, endpoint: `http://127.0.0.1:${cdpPort}`, runtime });
-  console.log(`Live dashboard -> http://127.0.0.1:${port}`);
+  const server = await startLiveDashboard({ host, port, endpoint: `http://127.0.0.1:${cdpPort}`, runtime });
+  console.log(`Live dashboard -> http://${host === "0.0.0.0" ? "<this-pc-ip>" : host}:${port}`);
   await new Promise((resolve) => server.on("close", resolve));
 }
 

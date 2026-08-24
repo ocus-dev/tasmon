@@ -7,6 +7,7 @@ const RUNTIME_FILES = [
   "/src/game/content-pack.js",
   "/src/game/data.js",
   "/src/game/endgame.js",
+  "/src/game/extra-difficulty.js",
   "/src/game/rng.js",
   "/src/game/trial.js",
   "/src/game/equipment.js",

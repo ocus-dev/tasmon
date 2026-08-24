@@ -695,7 +695,7 @@ async function setTurboRespawn(enabled, endpoint) {
         turbo.phase = target === "[10-10]" ? "boss-10-10" : "farm-" + target.slice(1, -1);
         turbo.keyCount = keys;
         const stageAction = turbo.stageNode(target);
-        const loopAction = turbo.loopNode(target);
+        const loopAction = target === "[10-9]" ? "skipped-lap" : turbo.loopNode(target);
         turbo.write(stageAction + "/" + loopAction, { phase: turbo.phase, keyCount: keys, target, layers: turbo.stack });
         return { enabled: true, phase: turbo.phase, keyCount: turbo.keyCount, stack: turbo.stack, lastAction: turbo.lastAction, log: turbo.log };
       },
@@ -742,7 +742,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
   let turboStack = 0;
   let turboLastAction = null;
   let turboLog = [];
-  const ultraAutomation = { open: false, condense: false, busy: false, last: null, lastError: null };
+  const ultraAutomation = { open: false, openRarity: "ultra", condense: false, busy: false, last: null, lastError: null };
   const runUltraAutomation = async () => {
     if (ultraAutomation.busy || (!ultraAutomation.open && !ultraAutomation.condense)) return;
     ultraAutomation.busy = true;
@@ -779,7 +779,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
         }
         for (const swap of ultraLeveling.last?.swapped ?? []) logUltraLeveling(`${swap.id} swapped in`);
         if (ultraLeveling.last?.complete && ultraLeveling.last.restored && !ultraLeveling.restored) {
-          logUltraLeveling("All awakened Ultras leveled; original party restored at 10-9");
+          logUltraLeveling("All awakened Ultra, Legendary, and Immortal monsters leveled; original party restored at 10-9");
           ultraLeveling.restored = true;
         }
       }
@@ -1092,6 +1092,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
       try {
         const body = await readRequestBody(request);
         ultraAutomation.open = body.open === true;
+        ultraAutomation.openRarity = RARITY_ORDER.includes(body.openRarity) ? body.openRarity : "ultra";
         ultraAutomation.condense = body.condense === true;
         await runUltraAutomation();
         response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
@@ -1171,7 +1172,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
   return server;
 }
 
-function ultraAutomationExpression({ open, condense }) {
+function ultraAutomationExpression({ open, openRarity, condense }) {
   const speciesMeta = Object.fromEntries(Object.entries(SPECIES).map(([id, species]) => [id, { rarity: species.rarity }]));
   return `(async () => {
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1180,7 +1181,13 @@ function ultraAutomationExpression({ open, condense }) {
     if (!state) return { error: "TASMON debug object is unavailable", debug: { url: location.href } };
     const result = { opened: 0, condensed: 0, protectedAwakeningSix: 0, skipped: [] };
     const speciesMeta = ${JSON.stringify(speciesMeta)};
-    const ultraEggIndexes = () => (state.eggs ?? []).map((egg, index) => ({ egg, index })).filter(({ egg }) => egg.rarity === "ultra");
+    const rarityOrder = ${JSON.stringify(RARITY_ORDER)};
+    const openRarity = ${JSON.stringify(RARITY_ORDER.includes(openRarity) ? openRarity : "ultra")};
+    const openRarityRank = rarityOrder.indexOf(openRarity);
+    const openableEggIndexes = () => (state.eggs ?? []).map((egg, index) => ({ egg, index })).filter(({ egg }) => {
+      const eggRank = rarityOrder.indexOf(egg.rarity);
+      return eggRank >= 0 && eggRank <= openRarityRank;
+    });
     const closeHatchPopup = async () => {
       const closeButton = document.querySelector("#hatch-overlay:not(.hidden) .hatch-close-btn");
       if (closeButton) {
@@ -1190,7 +1197,7 @@ function ultraAutomationExpression({ open, condense }) {
       return Boolean(!document.querySelector("#hatch-overlay:not(.hidden)"));
     };
     if (${Boolean(open)}) {
-      for (const { egg } of ultraEggIndexes()) {
+      for (const { egg } of openableEggIndexes()) {
         if (!(await closeHatchPopup())) { result.skipped.push("Hatch popup could not close: " + egg.id); continue; }
         const currentIndex = (state.eggs ?? []).findIndex((candidate) => candidate.id === egg.id);
         if (currentIndex < 0) continue;
@@ -1319,15 +1326,16 @@ function levelUltraExpression() {
     const state = debug?.state;
     if (!state) return { error: "TASMON debug object is unavailable" };
     const speciesMeta = ${JSON.stringify(speciesMeta)};
+    const targetRarities = new Set(["ultra", "legend", "immortal"]);
     const session = window.__ultraLevelingSession ??= { originalParty: [...(state.party ?? [])] };
     const expeditions = new Set((state.expeditions ?? []).flatMap((group) => Array.isArray(group) ? group : (group.members ?? [])));
-    const ultra = Object.values(state.monsters ?? {}).filter((monster) => speciesMeta[monster.speciesId]?.rarity === "ultra" && (monster.awakening ?? 0) > 0 && (monster.level ?? 1) < 90);
-    const trainable = ultra.filter((monster) => !expeditions.has(monster.id));
-    if (trainable.length === 0 && ultra.length > 0) return { complete: false, blocked: ultra.length, remaining: ultra.length, offParty: 0, swapped: [], stage: "blocked", loop: "blocked" };
+    const targets = Object.values(state.monsters ?? {}).filter((monster) => targetRarities.has(speciesMeta[monster.speciesId]?.rarity) && (monster.awakening ?? 0) > 0 && (monster.level ?? 1) < 90);
+    const trainable = targets.filter((monster) => !expeditions.has(monster.id));
+    if (trainable.length === 0 && targets.length > 0) return { complete: false, blocked: targets.length, remaining: targets.length, offParty: 0, swapped: [], stage: "blocked", loop: "blocked" };
     const party = state.party ?? [];
     const remaining = trainable.filter((monster) => !party.includes(monster.id));
     const targetForParty = (currentParty) => currentParty.map((id, index) => ({ id, index, monster: state.monsters?.[id] }))
-      .filter(({ index, monster }) => index > 0 && monster && !(speciesMeta[monster.speciesId]?.rarity === "ultra" && (monster.level ?? 1) < 90))
+      .filter(({ index, monster }) => index > 0 && monster && !(targetRarities.has(speciesMeta[monster.speciesId]?.rarity) && (monster.awakening ?? 0) > 0 && (monster.level ?? 1) < 90))
       .sort((left, right) => right.index - left.index)[0];
     const target = targetForParty(party);
     const debugInfo = () => ({
@@ -1405,12 +1413,12 @@ function levelUltraExpression() {
         swap.click();
         await sleep(150);
         const cell = await waitForCell('.mon-cell[data-mon="' + CSS.escape(candidate.id) + '"]');
-        if (!cell) return { error: "Ultra monster is not visible in the Tasmon list", remaining: trainable.length, blocked: ultra.length - trainable.length, swapped, debug: debugInfo() };
+        if (!cell) return { error: "Target monster is not visible in the Tasmon list", remaining: trainable.length, blocked: targets.length - trainable.length, swapped, debug: debugInfo() };
         cell.click();
         await sleep(250);
       } else {
         const dragResult = await dragMonsterToSlot(candidate.id, currentTarget.id, currentTarget.index);
-        if (dragResult.error) return { error: dragResult.error, remaining: trainable.length, blocked: ultra.length - trainable.length, swapped, debug: { ...debugInfo(), drag: dragResult, heroTabCount: document.querySelectorAll(".hero-tab").length, partyTabFound: Boolean(partyTab) } };
+        if (dragResult.error) return { error: dragResult.error, remaining: trainable.length, blocked: targets.length - trainable.length, swapped, debug: { ...debugInfo(), drag: dragResult, heroTabCount: document.querySelectorAll(".hero-tab").length, partyTabFound: Boolean(partyTab) } };
       }
       swapped.push({ id: candidate.id, level: candidate.level ?? 1, replaced: currentTarget.id, slot: currentTarget.index });
     }
@@ -1460,16 +1468,16 @@ function levelUltraExpression() {
       }
       return { restored };
     };
-    if (ultra.length === 0) {
+    if (targets.length === 0) {
       const partyResult = await restoreParty();
       if (partyResult.error) return { error: partyResult.error, complete: true, restored: false, swapped: [], debug: debugInfo() };
       const stage = await stageNode("[10-9]");
-      const loop = await loopNode("[10-9]");
+      const loop = "skipped-lap";
       return { complete: true, restored: true, blocked: 0, remaining: 0, offParty: 0, swapped: [], restoredParty: partyResult.restored, stage, loop, debug: debugInfo() };
     }
     const stage = await stageNode("[8-5]");
     const loop = await loopNode("[8-5]");
-    return { remaining: ultra.length, blocked: ultra.length - trainable.length, offParty: remaining.length, swapped, stage, loop, debug: debugInfo() };
+    return { remaining: targets.length, blocked: targets.length - trainable.length, offParty: remaining.length, swapped, stage, loop, debug: debugInfo() };
   })()`;
 }
 

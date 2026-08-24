@@ -97,7 +97,7 @@
     </div>
     <div id="turboPanel" class="tab-panel">
       <section class="section"><div class="section-head"><div class="label">Turbo reproduction</div><div class="note">Each pulse adds one timer layer</div></div>
-        <p class="awaken-note">Turbo rotates through 10-7 → 10-10 boss, 10-8 → 10-10 boss, and 10-9 → 10-10 boss. Each stage transition explicitly selects the boss lap so keys are used instead of accumulating on a farming stage. Each pulse enables the selected loop and adds one extra deferred wave callback layer.</p>
+        <p class="awaken-note">Turbo rotates through 10-7 → 10-10 boss, 10-8 → 10-10 boss, and 10-9 → 10-10 boss. It selects 10-9 normally without the lap button, then uses the boss lap on 10-10. Each pulse adds one extra deferred wave callback layer.</p>
         <div class="actions"><div class="meta"><span id="turboPhase">Phase --</span><span id="turboStack">Layers --</span><span id="turboKeys">Keys --</span><span id="turboTarget">Target 1000 KPM</span></div><div><button class="button turbo" id="turboPulse" type="button">Start Turbo</button> <button class="button" id="turboStop" type="button">Stop</button></div></div>
         <pre class="turbo-console" id="turboConsole" tabindex="0">Turbo console waiting.</pre>
       </section>
@@ -108,8 +108,8 @@
         <div class="automation-status" id="craftStatus">Automation idle.</div>
         <pre class="automation-log" id="craftLog" tabindex="0">Crafting log waiting.</pre>
       </section>
-      <section class="section"><div class="section-head"><div class="label">Egg and awakening automation</div><div class="note">Opt-in; checks every 5 seconds</div></div><div class="egg-automation"><label><input type="checkbox" id="autoOpenUltra"> Auto-open ultra eggs</label><label><input type="checkbox" id="autoCondenseUltra"> Awaken duplicate ultra and legendary monsters</label><span class="egg-automation-status" id="ultraAutomationStatus">Automation off</span></div></section>
-      <section class="section"><div class="section-head"><div class="label">Ultra leveling</div><div class="note">Runs stage 8-5 until every Ultra reaches level 90</div></div><div class="egg-automation"><label><input type="checkbox" id="autoLevelUltra"> Level Ultra monsters to 90</label><span class="egg-automation-status" id="ultraLevelingStatus">Automation off</span></div><pre class="ultra-debug" id="ultraLevelingConsole" tabindex="0">Ultra leveling console waiting.</pre></section>
+      <section class="section"><div class="section-head"><div class="label">Egg and awakening automation</div><div class="note">Opt-in; checks every 5 seconds</div></div><div class="egg-automation"><label><input type="checkbox" id="autoOpenUltra"> Auto-open eggs up to</label><select id="autoOpenRarity" aria-label="Maximum egg rarity"><option value="common">Common</option><option value="rare">Rare</option><option value="ultra" selected>Ultra</option><option value="legend">Legendary</option><option value="immortal">Immortal</option><option value="arcana">Arcana</option><option value="beyond">Beyond</option><option value="century">Century</option><option value="cosmic">Cosmic</option><option value="celestial">Celestial</option></select><label><input type="checkbox" id="autoCondenseUltra"> Awaken duplicate Ultra and Legendary monsters</label><span class="egg-automation-status" id="ultraAutomationStatus">Automation off</span></div></section>
+      <section class="section"><div class="section-head"><div class="label">High-rarity leveling</div><div class="note">Runs stage 8-5 until every awakened Ultra, Legendary, and Immortal reaches level 90</div></div><div class="egg-automation"><label><input type="checkbox" id="autoLevelUltra"> Level Ultra, Legendary, and Immortal monsters to 90</label><span class="egg-automation-status" id="ultraLevelingStatus">Automation off</span></div><pre class="ultra-debug" id="ultraLevelingConsole" tabindex="0">High-rarity leveling console waiting.</pre></section>
     </div>
     <p class="note warning" id="warning">Rates begin after the first two samples.</p>
   </main>
@@ -134,7 +134,7 @@
     let kpmChartSignature = "";
     let attackReportSignature = "";
     async function updateUltraAutomation() {
-      const response = await fetch("/api/ultra-automation", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ open: $("autoOpenUltra").checked, condense: $("autoCondenseUltra").checked }) });
+      const response = await fetch("/api/ultra-automation", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ open: $("autoOpenUltra").checked, openRarity: $("autoOpenRarity").value, condense: $("autoCondenseUltra").checked }) });
       const body = await response.text();
       let data;
       try { data = body ? JSON.parse(body) : {}; } catch { throw new Error(`Ultra automation API unavailable (HTTP ${response.status})`); }
@@ -144,9 +144,11 @@
     function renderUltraAutomation(automation) {
       if (!automation) return;
       $("autoOpenUltra").checked = automation.open === true;
+      $("autoOpenRarity").value = automation.openRarity ?? "ultra";
       $("autoCondenseUltra").checked = automation.condense === true;
       const last = automation.last;
-      const result = last && !last.error ? `Last run: opened ${last.opened ?? 0}, combined ${last.condensed ?? 0}; protected Aw VI: ${last.protectedAwakeningSix ?? 0}` : "";
+      const openRarity = $("autoOpenRarity").selectedOptions[0]?.textContent ?? "Ultra";
+      const result = last && !last.error ? `Last run: opened ${last.opened ?? 0} (up to ${openRarity}), combined ${last.condensed ?? 0}; protected Aw VI: ${last.protectedAwakeningSix ?? 0}` : "";
       $("ultraAutomationStatus").textContent = automation.lastError ? `Error: ${automation.lastError}` : automation.busy ? "Running..." : (automation.open || automation.condense ? result || "Automation enabled; waiting for next run" : "Automation off");
     }
     function renderCrafting(crafting) {
@@ -167,11 +169,11 @@
       const diagnostic = last?.debug;
       const diagnosticText = diagnostic ? ` · tab ${diagnostic.activeTab ?? "?"} · swaps ${diagnostic.swapCount ?? 0} · target ${diagnostic.target?.id ?? "none"}` : "";
       const swaps = Array.isArray(last?.swapped) ? last.swapped : last?.swapped ? [last.swapped] : [];
-      const swapText = swaps.length ? `Swapped in ${swaps.length} Ultra${swaps.length === 1 ? "" : "s"} (${swaps.map((swap) => swap.id).join(", ")}); leveling at 8-5${diagnosticText}` : "";
-      $("ultraLevelingStatus").textContent = leveling.lastError ? `Error: ${leveling.lastError}${diagnosticText}` : !leveling.enabled ? "Automation off" : last?.complete ? "Complete: every awakened Ultra is level 90+" : last?.blocked ? `Blocked: ${last.blocked} awakened Ultra${last.blocked === 1 ? "" : "s"} on expedition` : leveling.running ? `Running stage 8-5 · ${last?.remaining ?? "--"} awakened Ultras below 90${diagnosticText}` : swapText || `Enabled; checking party and stage${diagnosticText}`;
+      const swapText = swaps.length ? `Swapped in ${swaps.length} high-rarity monster${swaps.length === 1 ? "" : "s"} (${swaps.map((swap) => swap.id).join(", ")}); leveling at 8-5${diagnosticText}` : "";
+      $("ultraLevelingStatus").textContent = leveling.lastError ? `Error: ${leveling.lastError}${diagnosticText}` : !leveling.enabled ? "Automation off" : last?.complete ? "Complete: every awakened Ultra, Legendary, and Immortal is level 90+" : last?.blocked ? `Blocked: ${last.blocked} awakened high-rarity monster${last.blocked === 1 ? "" : "s"} on expedition` : leveling.running ? `Running stage 8-5 · ${last?.remaining ?? "--"} awakened high-rarity monsters below 90${diagnosticText}` : swapText || `Enabled; checking party and stage${diagnosticText}`;
       $("ultraLevelingConsole").textContent = leveling.logs?.length
         ? leveling.logs.map((entry) => `${new Date(entry.at).toLocaleTimeString()} | ${entry.message}`).join("\n")
-        : "Ultra leveling console waiting.";
+        : "High-rarity leveling console waiting.";
     }
     let etchingData = null;
     let etchingRefreshBusy = false;
@@ -573,12 +575,13 @@
     $("awakeningRefresh").addEventListener("click", loadAwakenings);
     loadAwakenings();
     $("autoOpenUltra").addEventListener("change", () => updateUltraAutomation().catch((error) => { $("ultraAutomationStatus").textContent = `Error: ${error.message}`; }));
+    $("autoOpenRarity").addEventListener("change", () => updateUltraAutomation().catch((error) => { $("ultraAutomationStatus").textContent = `Error: ${error.message}`; }));
     $("autoCondenseUltra").addEventListener("change", () => updateUltraAutomation().catch((error) => { $("ultraAutomationStatus").textContent = `Error: ${error.message}`; }));
     $("autoLevelUltra").addEventListener("change", async () => {
       try {
         const response = await fetch("/api/ultra-leveling", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: $("autoLevelUltra").checked }) });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error ?? "Unable to update Ultra leveling");
+        if (!response.ok) throw new Error(data.error ?? "Unable to update high-rarity leveling");
         renderUltraLeveling(data);
       } catch (error) { $("ultraLevelingStatus").textContent = `Error: ${error.message}`; }
     });
