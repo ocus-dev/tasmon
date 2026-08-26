@@ -38,6 +38,42 @@ test("stat thresholds can be overridden", () => {
   );
 });
 
+test("OR preserves a high-attack item without skill power", () => {
+  const itemSet = items(9, { stats: { atkPct: 2.0, skillPower: 0 } });
+
+  assert.deepEqual(
+    craftableGroupCount({ items: itemSet, storage: [], equipped: [] }, "gear", { skillOperator: "OR" }),
+    [],
+  );
+});
+
+test("HP can be enabled as a preservation trait", () => {
+  const itemSet = items(9, { stats: { atkPct: 0, skillPower: 0, hpPct: 1.01 } });
+
+  assert.deepEqual(
+    craftableGroupCount({ items: itemSet, storage: [], equipped: [] }, "gear", {
+      hpEnabled: true,
+      atkOperator: "OR",
+      hpOperator: "OR",
+    }),
+    [],
+  );
+});
+
+test("base egg-drop jewelry is always preserved", () => {
+  const jewelry = items(9, { part: "charm", baseStats: ["dropBonus"] });
+
+  assert.deepEqual(craftableGroupCount({ items: jewelry, storage: [], equipped: [] }, "charm"), []);
+});
+
+test("attack and skill rules can be disabled", () => {
+  const itemSet = items(9, { stats: { atkPct: 0, skillPower: 0 } });
+
+  const groups = craftableGroupCount({ items: itemSet, storage: [], equipped: [] }, "gear", { atkEnabled: false, skillEnabled: false });
+
+  assert.equal(groups[0].batches, 1);
+});
+
 test("combined crafting gives charm groups a turn before returning to gear", () => {
   const groups = [
     { mode: "gear", batches: 4, count: 36 },

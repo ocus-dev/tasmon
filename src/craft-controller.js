@@ -6,8 +6,13 @@ const WAIT_MS = 150;
 const VERIFY_WAIT_MS = 100;
 const VERIFY_ATTEMPTS = 10;
 const LOOP_INTERVAL_MS = 2_000;
+const GOTCHA_CHECK_INTERVAL_MS = 60_000;
 const DEFAULT_MIN_ATK_PCT = 0.90;
 const DEFAULT_MIN_SKILL_POWER = 0.40;
+const DEFAULT_MIN_HP_PCT = 0;
+const DEFAULT_ATK_OPERATOR = "AND";
+const DEFAULT_SKILL_OPERATOR = "AND";
+const DEFAULT_HP_OPERATOR = "AND";
 const RETRYABLE_UI_REASONS = new Set([
   "compound-tab-not-found",
   "craft-window-not-visible",
@@ -34,6 +39,7 @@ const SNAPSHOT = `(() => {
     lv: item.lv ?? 1,
     part: item.part,
     locked: !!item.locked,
+    baseStats: (item.opts ?? []).filter((entry) => entry?.base === true).map((entry) => entry.stat),
     stats: [...(item.opts ?? []), ...(item.enhances ?? [])].reduce((totals, entry) => {
       if (entry?.stat) totals[entry.stat] = (totals[entry.stat] ?? 0) + (entry.value ?? 0);
       return totals;
@@ -72,14 +78,28 @@ export function craftableGroupCount(snapshot, mode = "gear", thresholds = {}) {
   if (!snapshot) return [];
   const minAtkPct = thresholds.minAtkPct ?? DEFAULT_MIN_ATK_PCT;
   const minSkillPower = thresholds.minSkillPower ?? DEFAULT_MIN_SKILL_POWER;
+  const minHpPct = thresholds.minHpPct ?? DEFAULT_MIN_HP_PCT;
+  const atkEnabled = thresholds.atkEnabled !== false;
+  const skillEnabled = thresholds.skillEnabled !== false;
+  const atkOperator = thresholds.atkOperator === "OR" ? "OR" : DEFAULT_ATK_OPERATOR;
+  const skillOperator = thresholds.skillOperator === "OR" ? "OR" : DEFAULT_SKILL_OPERATOR;
+  const hpOperator = thresholds.hpOperator === "OR" ? "OR" : DEFAULT_HP_OPERATOR;
   const equipped = new Set(snapshot.equipped ?? []);
   const groups = new Map();
   for (const item of [...(snapshot.items ?? []), ...(snapshot.storage ?? [])]) {
     const charm = item.part === "charm";
     const itemMode = charm ? "charm" : "gear";
     if (mode !== "both" && mode !== itemMode) continue;
-    const protectedItem =
-      (item.stats?.atkPct ?? 0) > minAtkPct && (item.stats?.skillPower ?? 0) > minSkillPower;
+    if (itemMode === "charm" && item.baseStats?.includes("dropBonus")) continue;
+    const criteria = [
+      ...(atkEnabled ? [{ value: (item.stats?.atkPct ?? 0) > minAtkPct, operator: atkOperator }] : []),
+      ...(skillEnabled ? [{ value: (item.stats?.skillPower ?? 0) > minSkillPower, operator: skillOperator }] : []),
+      ...(thresholds.hpEnabled === true ? [{ value: (item.stats?.hpPct ?? 0) > minHpPct, operator: hpOperator }] : []),
+    ];
+    const protectedItem = criteria.length > 0 && criteria.slice(1).reduce(
+      (result, criterion) => criterion.operator === "OR" ? result || criterion.value : result && criterion.value,
+      criteria[0].value,
+    );
     if (itemMode === "gear" && protectedItem) continue;
     if (item.locked || equipped.has(item.id)) continue;
     const key = `${itemMode}|${item.rarity}|${bandOf(item.lv)}`;
@@ -217,7 +237,74 @@ const ALCHEMIZE_LOW_EGGS = `(async () => {
   return { ok: after === 0, count: before - after, remaining: after };
 })()`;
 
-export async function runCraftController({ endpoint = DEFAULT_ENDPOINT, maxRuns = 1, mode = "gear", confirm = false, loop = false, minAtkPct = DEFAULT_MIN_ATK_PCT, minSkillPower = DEFAULT_MIN_SKILL_POWER, log = console.log, signal } = {}) {
+const CRAFT_MAINTENANCE = (useGotchaTokens, storeLockedItems) => `(async () => {
+  const debug = window.__battleDebug?.();
+  const state = debug?.state;
+  if (!state) return { ok: false, used: 0, stored: 0, reason: "battle-state-unavailable" };
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const closeItemsWindow = () => {
+    if (typeof debug.closeWindow === "function") {
+      debug.closeWindow("items", { force: true });
+      return;
+    }
+    const panel = document.querySelector("#items-panel");
+    panel?.querySelector(".win-close")?.click();
+  };
+  let used = 0;
+  let stored = 0;
+  let reason = null;
+  if (${useGotchaTokens}) {
+    const compoundTab = document.querySelector('.bar-tab[data-win="compound"]');
+    if (!compoundTab) return { ok: false, used, stored, reason: "compound-tab-not-found" };
+    compoundTab.click();
+    await sleep(100);
+    const gachaTab = [...document.querySelectorAll("#compound-body .cmp-tab")]
+      .find((button) => button.textContent.includes("ガチャ") || button.textContent.includes("Gacha"));
+    if (!gachaTab) return { ok: false, used, stored, reason: "gacha-tab-not-found" };
+    for (const [coinId, count] of Object.entries(state.storageCoins ?? {})) {
+      if (count <= 0) continue;
+      state.coins[coinId] = (state.coins[coinId] ?? 0) + count;
+      state.storageCoins[coinId] = 0;
+    }
+    gachaTab.click();
+    await sleep(100);
+    for (let rowIndex = 0; rowIndex < document.querySelectorAll("#compound-body .gacha-row").length; rowIndex += 1) {
+      for (;;) {
+        const row = document.querySelectorAll("#compound-body .gacha-row")[rowIndex];
+        const owned = Number(row?.querySelector(".gacha-cost")?.textContent?.match(/(\\d+)/)?.[1] ?? 0);
+        if (owned <= 0) break;
+        const slot = row?.querySelector(".coin-slot");
+        if (!slot) { reason = "gacha-slot-not-found"; break; }
+        slot.click();
+        await sleep(40);
+        const pull = row.querySelector(".gacha-pull");
+        if (!pull || pull.disabled) { reason = "gacha-pull-unavailable"; break; }
+        pull.click();
+        await sleep(100);
+        used += 1;
+      }
+      if (reason) break;
+    }
+    closeItemsWindow();
+  }
+  if (${storeLockedItems}) {
+    const storageCap = Math.min(640, state.storageCap ?? 80);
+    for (const item of [...(state.items ?? [])]) {
+      if (!item.locked) continue;
+      if ((state.storage ?? []).length >= storageCap) { reason = reason ?? "storage-full"; break; }
+      const index = state.items.indexOf(item);
+      if (index < 0) continue;
+      state.items.splice(index, 1);
+      state.storage.push(item);
+      stored += 1;
+    }
+  }
+  localStorage.setItem("taskbar-idle-rpg-save", JSON.stringify(state));
+  debug.renderHud?.();
+  return { ok: !reason, used, stored, reason };
+})()`;
+
+export async function runCraftController({ endpoint = DEFAULT_ENDPOINT, maxRuns = 1, mode = "gear", confirm = false, loop = false, minAtkPct = DEFAULT_MIN_ATK_PCT, minSkillPower = DEFAULT_MIN_SKILL_POWER, minHpPct = DEFAULT_MIN_HP_PCT, atkEnabled = true, skillEnabled = true, hpEnabled = false, atkOperator = DEFAULT_ATK_OPERATOR, skillOperator = DEFAULT_SKILL_OPERATOR, hpOperator = DEFAULT_HP_OPERATOR, useGotchaTokens = false, storeLockedItems = false, log = console.log, signal } = {}) {
   if (!confirm) throw new Error("Craft automation changes game state; rerun with --confirm to enable it");
   if (!Number.isInteger(maxRuns) || maxRuns < 1) throw new Error("maxRuns must be a positive integer");
   if (!new Set(["gear", "charm", "both"]).has(mode)) throw new Error("mode must be gear, charm, or both");
@@ -225,6 +312,7 @@ export async function runCraftController({ endpoint = DEFAULT_ENDPOINT, maxRuns 
   const results = [];
   let exitReason = loop ? "stopped-by-user" : "max-runs-reached";
   let preferredMode = mode === "both" ? "charm" : mode;
+  let lastGotchaTokenCheckAt = 0;
   for (let run = 0; (loop || run < maxRuns) && !signal?.aborted; run += 1) {
     let chests = { ok: true, opened: 0, remaining: 0 };
     if (mode !== "charm") {
@@ -242,12 +330,13 @@ export async function runCraftController({ endpoint = DEFAULT_ENDPOINT, maxRuns 
       if (chests.opened > 0) log(`Opened ${chests.opened} pending chests`);
     }
     let before = await evaluateRuntime(SNAPSHOT, endpoint);
-    let groups = craftableGroupCount(before, mode, { minAtkPct, minSkillPower });
+    const thresholds = { minAtkPct, minSkillPower, minHpPct, atkEnabled, skillEnabled, hpEnabled, atkOperator, skillOperator, hpOperator };
+    let groups = craftableGroupCount(before, mode, thresholds);
     let group = selectCraftGroup(groups, mode, preferredMode);
     let includeStorage = false;
     if (!group) {
       const withStorage = await evaluateRuntime(SNAPSHOT_WITH_STORAGE, endpoint);
-      const storageGroups = craftableGroupCount(withStorage, mode, { minAtkPct, minSkillPower });
+      const storageGroups = craftableGroupCount(withStorage, mode, thresholds);
       const storageGroup = selectCraftGroup(storageGroups, mode, preferredMode);
       if (storageGroup) {
         groups = storageGroups;
@@ -314,6 +403,14 @@ export async function runCraftController({ endpoint = DEFAULT_ENDPOINT, maxRuns 
         exitReason = chests?.reason ?? "chest-batch-open-failed";
         break;
       }
+    }
+    const checkGotchaTokens = useGotchaTokens && Date.now() - lastGotchaTokenCheckAt >= GOTCHA_CHECK_INTERVAL_MS;
+    if (checkGotchaTokens) lastGotchaTokenCheckAt = Date.now();
+    if (checkGotchaTokens || storeLockedItems) {
+      const maintenance = await gameAction(CRAFT_MAINTENANCE(checkGotchaTokens, storeLockedItems), endpoint);
+      if (maintenance?.used) log(`Used ${maintenance.used} gotcha token${maintenance.used === 1 ? "" : "s"}`);
+      if (maintenance?.stored) log(`Moved ${maintenance.stored} locked item${maintenance.stored === 1 ? "" : "s"} to storage`);
+      if (!maintenance?.ok && maintenance?.reason) log(`Craft maintenance stopped: ${maintenance.reason}`);
     }
     results.push({ run: run + 1, crafted: true, slots: action.slots, verified, alchemy, chests, before, after });
     if (mode === "both") preferredMode = group.mode === "charm" ? "gear" : "charm";

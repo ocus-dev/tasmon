@@ -823,6 +823,15 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     mode: "both",
     minAtkPct: 0.9,
     minSkillPower: 0.4,
+    minHpPct: 0.9,
+    atkEnabled: true,
+    skillEnabled: true,
+    hpEnabled: false,
+    useGotchaTokens: false,
+    storeLockedItems: false,
+    atkOperator: "AND",
+    skillOperator: "AND",
+    hpOperator: "AND",
     runs: 0,
     lastResult: null,
     exitReason: null,
@@ -835,6 +844,15 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     mode: craftAutomation.mode,
     minAtkPct: craftAutomation.minAtkPct,
     minSkillPower: craftAutomation.minSkillPower,
+    minHpPct: craftAutomation.minHpPct,
+    atkEnabled: craftAutomation.atkEnabled,
+    skillEnabled: craftAutomation.skillEnabled,
+    hpEnabled: craftAutomation.hpEnabled,
+    useGotchaTokens: craftAutomation.useGotchaTokens,
+    storeLockedItems: craftAutomation.storeLockedItems,
+    atkOperator: craftAutomation.atkOperator,
+    skillOperator: craftAutomation.skillOperator,
+    hpOperator: craftAutomation.hpOperator,
     runs: craftAutomation.runs,
     lastResult: craftAutomation.lastResult,
     exitReason: craftAutomation.exitReason,
@@ -844,12 +862,21 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
   const stopCraftAutomation = () => {
     if (craftAutomation.controller) craftAutomation.controller.abort();
   };
-  const startCraftAutomation = ({ mode, minAtkPct, minSkillPower }) => {
+  const startCraftAutomation = ({ mode, minAtkPct, minSkillPower, minHpPct, atkEnabled, skillEnabled, hpEnabled, useGotchaTokens, storeLockedItems, atkOperator, skillOperator, hpOperator }) => {
     if (craftAutomation.running) throw new Error("Craft automation is already running");
     craftAutomation.running = true;
     craftAutomation.mode = mode;
     craftAutomation.minAtkPct = minAtkPct;
     craftAutomation.minSkillPower = minSkillPower;
+    craftAutomation.minHpPct = minHpPct;
+    craftAutomation.atkEnabled = atkEnabled;
+    craftAutomation.skillEnabled = skillEnabled;
+    craftAutomation.hpEnabled = hpEnabled;
+    craftAutomation.useGotchaTokens = useGotchaTokens;
+    craftAutomation.storeLockedItems = storeLockedItems;
+    craftAutomation.atkOperator = atkOperator;
+    craftAutomation.skillOperator = skillOperator;
+    craftAutomation.hpOperator = hpOperator;
     craftAutomation.runs = 0;
     craftAutomation.lastResult = null;
     craftAutomation.exitReason = null;
@@ -864,6 +891,15 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
       loop: true,
       minAtkPct,
       minSkillPower,
+      minHpPct,
+      atkEnabled,
+      skillEnabled,
+      hpEnabled,
+      useGotchaTokens,
+      storeLockedItems,
+      atkOperator,
+      skillOperator,
+      hpOperator,
       signal: craftAutomation.controller.signal,
       log: (message) => {
         craftAutomation.logs.push({ at: Date.now(), message });
@@ -1012,10 +1048,46 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
         const mode = body.mode ?? "gear";
         const minAtkPct = Number(body.minAtkPct ?? 0.9);
         const minSkillPower = Number(body.minSkillPower ?? 0.4);
+        const minHpPct = Number(body.minHpPct ?? 0.9);
+        const atkEnabled = body.atkEnabled !== false;
+        const skillEnabled = body.skillEnabled !== false;
+        const hpEnabled = body.hpEnabled === true;
+        const atkOperator = body.atkOperator === "OR" ? "OR" : "AND";
+        const skillOperator = body.skillOperator === "OR" ? "OR" : "AND";
+        const hpOperator = body.hpOperator === "OR" ? "OR" : "AND";
         if (!new Set(["gear", "charm", "both"]).has(mode)) throw new Error("Mode must be gear, charm, or both");
-        if (!Number.isFinite(minAtkPct) || minAtkPct < 0 || !Number.isFinite(minSkillPower) || minSkillPower < 0) throw new Error("Thresholds must be non-negative numbers");
-        startCraftAutomation({ mode, minAtkPct, minSkillPower });
+        if (!Number.isFinite(minAtkPct) || minAtkPct < 0 || !Number.isFinite(minSkillPower) || minSkillPower < 0 || !Number.isFinite(minHpPct) || minHpPct < 0) throw new Error("Thresholds must be non-negative numbers");
+        const useGotchaTokens = body.useGotchaTokens === true;
+        const storeLockedItems = body.storeLockedItems === true;
+        startCraftAutomation({ mode, minAtkPct, minSkillPower, minHpPct, atkEnabled, skillEnabled, hpEnabled, useGotchaTokens, storeLockedItems, atkOperator, skillOperator, hpOperator });
         response.writeHead(202, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        response.end(JSON.stringify(craftStatus()));
+      } catch (error) {
+        response.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ error: error.message }));
+      }
+      return;
+    }
+    if (pathname === "/api/crafting/settings" && request.method === "POST") {
+      try {
+        if (craftAutomation.running) throw new Error("Stop craft automation before changing settings");
+        const body = await readRequestBody(request);
+        const mode = body.mode ?? craftAutomation.mode;
+        const minAtkPct = Number(body.minAtkPct ?? craftAutomation.minAtkPct);
+        const minSkillPower = Number(body.minSkillPower ?? craftAutomation.minSkillPower);
+        const minHpPct = Number(body.minHpPct ?? craftAutomation.minHpPct);
+        const atkEnabled = body.atkEnabled !== false;
+        const skillEnabled = body.skillEnabled !== false;
+        const hpEnabled = body.hpEnabled === true;
+        const useGotchaTokens = body.useGotchaTokens ?? craftAutomation.useGotchaTokens;
+        const storeLockedItems = body.storeLockedItems ?? craftAutomation.storeLockedItems;
+        const atkOperator = body.atkOperator === "OR" ? "OR" : "AND";
+        const skillOperator = body.skillOperator === "OR" ? "OR" : "AND";
+        const hpOperator = body.hpOperator === "OR" ? "OR" : "AND";
+        if (!new Set(["gear", "charm", "both"]).has(mode)) throw new Error("Mode must be gear, charm, or both");
+        if (!Number.isFinite(minAtkPct) || minAtkPct < 0 || !Number.isFinite(minSkillPower) || minSkillPower < 0 || !Number.isFinite(minHpPct) || minHpPct < 0) throw new Error("Thresholds must be non-negative numbers");
+        Object.assign(craftAutomation, { mode, minAtkPct, minSkillPower, minHpPct, atkEnabled, skillEnabled, hpEnabled, useGotchaTokens, storeLockedItems, atkOperator, skillOperator, hpOperator });
+        response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         response.end(JSON.stringify(craftStatus()));
       } catch (error) {
         response.writeHead(400, { "content-type": "application/json; charset=utf-8" });
@@ -1092,7 +1164,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
       try {
         const body = await readRequestBody(request);
         ultraAutomation.open = body.open === true;
-        ultraAutomation.openRarity = RARITY_ORDER.includes(body.openRarity) ? body.openRarity : "ultra";
+        ultraAutomation.openRarity = RARITY_ORDER.includes(body.openRarity) && RARITY_ORDER.indexOf(body.openRarity) >= RARITY_ORDER.indexOf("ultra") ? body.openRarity : "ultra";
         ultraAutomation.condense = body.condense === true;
         await runUltraAutomation();
         response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
@@ -1182,11 +1254,11 @@ function ultraAutomationExpression({ open, openRarity, condense }) {
     const result = { opened: 0, condensed: 0, protectedAwakeningSix: 0, skipped: [] };
     const speciesMeta = ${JSON.stringify(speciesMeta)};
     const rarityOrder = ${JSON.stringify(RARITY_ORDER)};
-    const openRarity = ${JSON.stringify(RARITY_ORDER.includes(openRarity) ? openRarity : "ultra")};
+    const openRarity = ${JSON.stringify(RARITY_ORDER.includes(openRarity) && RARITY_ORDER.indexOf(openRarity) >= RARITY_ORDER.indexOf("ultra") ? openRarity : "ultra")};
     const openRarityRank = rarityOrder.indexOf(openRarity);
     const openableEggIndexes = () => (state.eggs ?? []).map((egg, index) => ({ egg, index })).filter(({ egg }) => {
       const eggRank = rarityOrder.indexOf(egg.rarity);
-      return eggRank >= 0 && eggRank <= openRarityRank;
+      return eggRank >= rarityOrder.indexOf("ultra") && eggRank <= openRarityRank;
     });
     const closeHatchPopup = async () => {
       const closeButton = document.querySelector("#hatch-overlay:not(.hidden) .hatch-close-btn");

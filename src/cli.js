@@ -28,7 +28,7 @@ Usage:
   npm start -- render-report <save-json-path> [output-path]
   npm start -- live [port] [cdp-port] [--host <address>] [--lan]
   npm start -- turbo [endpoint]
-  npm start -- craft [max-runs] [cdp-port] [gear|charm|both] --confirm [--loop] [--min-atk-pct 0.9] [--min-skill-power 0.4]
+  npm start -- craft [max-runs] [cdp-port] [gear|charm|both] --confirm [--loop] [--min-atk-pct 0.9] [--min-skill-power 0.4] [--use-gotcha-tokens] [--store-locked-items]
   npm start -- constellation [port] [save-json-path]
 
 Commands:
@@ -182,6 +182,8 @@ async function runLive(args) {
 async function runCraft(args) {
   const confirm = args.includes("--confirm");
   const loop = args.includes("--loop");
+  const useGotchaTokens = args.includes("--use-gotcha-tokens");
+  const storeLockedItems = args.includes("--store-locked-items");
   const valueOption = (name, fallback) => {
     const index = args.indexOf(name);
     if (index === -1) return fallback;
@@ -193,12 +195,12 @@ async function runCraft(args) {
   const minSkillPower = valueOption("--min-skill-power", 0.40);
   const valueOptions = new Set(["--min-atk-pct", "--min-skill-power"]);
   const optionValues = new Set([...valueOptions].flatMap((name) => [name, args[args.indexOf(name) + 1]]));
-  const positional = args.filter((arg, index) => !optionValues.has(arg) && !valueOptions.has(args[index - 1]) && arg !== "--confirm" && arg !== "--loop");
+  const positional = args.filter((arg, index) => !optionValues.has(arg) && !valueOptions.has(args[index - 1]) && !["--confirm", "--loop", "--use-gotcha-tokens", "--store-locked-items"].includes(arg));
   const maxRuns = Number(positional.shift() ?? 1);
   const cdpPort = positional.shift() ?? "9222";
   const mode = positional.shift() ?? "gear";
   const endpoint = `${DEFAULT_ENDPOINT.replace(/:\d+$/, "")}:${cdpPort}`;
-  const result = await runCraftController({ endpoint, maxRuns, mode, confirm, loop, minAtkPct, minSkillPower });
+  const result = await runCraftController({ endpoint, maxRuns, mode, confirm, loop, minAtkPct, minSkillPower, useGotchaTokens, storeLockedItems });
   console.log(JSON.stringify({ mode, maxRuns, loop, minAtkPct, minSkillPower, ...result }, null, 2));
 }
 
