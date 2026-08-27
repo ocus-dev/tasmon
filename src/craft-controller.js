@@ -242,62 +242,65 @@ const CRAFT_MAINTENANCE = (useGotchaTokens, storeLockedItems) => `(async () => {
   const state = debug?.state;
   if (!state) return { ok: false, used: 0, stored: 0, reason: "battle-state-unavailable" };
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  const closeItemsWindow = () => {
-    if (typeof debug.closeWindow === "function") {
-      debug.closeWindow("items", { force: true });
-      return;
-    }
-    const panel = document.querySelector("#items-panel");
-    panel?.querySelector(".win-close")?.click();
-  };
+  const withWindow = debug.windowManager?.withWindow?.bind(debug.windowManager);
   let used = 0;
   let stored = 0;
   let reason = null;
   if (${useGotchaTokens}) {
-    const compoundTab = document.querySelector('.bar-tab[data-win="compound"]');
-    if (!compoundTab) return { ok: false, used, stored, reason: "compound-tab-not-found" };
-    compoundTab.click();
-    await sleep(100);
-    const gachaTab = [...document.querySelectorAll("#compound-body .cmp-tab")]
-      .find((button) => button.textContent.includes("ガチャ") || button.textContent.includes("Gacha"));
-    if (!gachaTab) return { ok: false, used, stored, reason: "gacha-tab-not-found" };
-    for (const [coinId, count] of Object.entries(state.storageCoins ?? {})) {
-      if (count <= 0) continue;
-      state.coins[coinId] = (state.coins[coinId] ?? 0) + count;
-      state.storageCoins[coinId] = 0;
-    }
-    gachaTab.click();
-    await sleep(100);
-    for (let rowIndex = 0; rowIndex < document.querySelectorAll("#compound-body .gacha-row").length; rowIndex += 1) {
-      for (;;) {
-        const row = document.querySelectorAll("#compound-body .gacha-row")[rowIndex];
-        const owned = Number(row?.querySelector(".gacha-cost")?.textContent?.match(/(\\d+)/)?.[1] ?? 0);
-        if (owned <= 0) break;
-        const slot = row?.querySelector(".coin-slot");
-        if (!slot) { reason = "gacha-slot-not-found"; break; }
-        slot.click();
-        await sleep(40);
-        const pull = row.querySelector(".gacha-pull");
-        if (!pull || pull.disabled) { reason = "gacha-pull-unavailable"; break; }
-        pull.click();
-        await sleep(100);
-        used += 1;
+    const spendTokens = async () => {
+      const compoundTab = document.querySelector('.bar-tab[data-win="compound"]');
+      if (!compoundTab) return { reason: "compound-tab-not-found" };
+      compoundTab.click();
+      await sleep(100);
+      const gachaTab = [...document.querySelectorAll("#compound-body .cmp-tab")]
+        .find((button) => button.textContent.includes("ガチャ") || button.textContent.includes("Gacha"));
+      if (!gachaTab) return { reason: "gacha-tab-not-found" };
+      for (const [coinId, count] of Object.entries(state.storageCoins ?? {})) {
+        if (count <= 0) continue;
+        state.coins[coinId] = (state.coins[coinId] ?? 0) + count;
+        state.storageCoins[coinId] = 0;
       }
-      if (reason) break;
-    }
-    closeItemsWindow();
+      gachaTab.click();
+      await sleep(100);
+      for (let rowIndex = 0; rowIndex < document.querySelectorAll("#compound-body .gacha-row").length; rowIndex += 1) {
+        for (;;) {
+          const row = document.querySelectorAll("#compound-body .gacha-row")[rowIndex];
+          const owned = Number(row?.querySelector(".gacha-cost")?.textContent?.match(/(\\d+)/)?.[1] ?? 0);
+          if (owned <= 0) break;
+          const slot = row?.querySelector(".coin-slot");
+          if (!slot) { reason = "gacha-slot-not-found"; break; }
+          slot.click();
+          await sleep(40);
+          const pull = row.querySelector(".gacha-pull");
+          if (!pull || pull.disabled) { reason = "gacha-pull-unavailable"; break; }
+          pull.click();
+          await sleep(100);
+          used += 1;
+        }
+        if (reason) break;
+      }
+      return { reason };
+    };
+    const tokenResult = withWindow
+      ? await withWindow("box", () => withWindow("compound", spendTokens, "craft-token-spending"), "craft-token-spending")
+      : await spendTokens();
+    reason = tokenResult?.reason ?? reason;
   }
   if (${storeLockedItems}) {
-    const storageCap = Math.min(640, state.storageCap ?? 80);
-    for (const item of [...(state.items ?? [])]) {
-      if (!item.locked) continue;
-      if ((state.storage ?? []).length >= storageCap) { reason = reason ?? "storage-full"; break; }
-      const index = state.items.indexOf(item);
-      if (index < 0) continue;
-      state.items.splice(index, 1);
-      state.storage.push(item);
-      stored += 1;
-    }
+    const storeItems = async () => {
+      const storageCap = Math.min(640, state.storageCap ?? 80);
+      for (const item of [...(state.items ?? [])]) {
+        if (!item.locked) continue;
+        if ((state.storage ?? []).length >= storageCap) { reason = reason ?? "storage-full"; break; }
+        const index = state.items.indexOf(item);
+        if (index < 0) continue;
+        state.items.splice(index, 1);
+        state.storage.push(item);
+        stored += 1;
+      }
+    };
+    if (withWindow) await withWindow("items", storeItems, "craft-item-storage");
+    else await storeItems();
   }
   localStorage.setItem("taskbar-idle-rpg-save", JSON.stringify(state));
   debug.renderHud?.();

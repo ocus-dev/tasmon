@@ -15647,6 +15647,43 @@ function closeWindow(id, opts = {}) {
   if (!anyPanelOpen()) window.appControl?.closePanel(); // ウィンドウを元に戻す
 }
 
+// Temporary automation windows use leases so an operation closes only what it opened.
+const windowManager = (() => {
+  const leases = new Map();
+  const acquire = (id, owner = "anonymous") => {
+    let entry = leases.get(id);
+    if (!entry) {
+      const wasOpen = openOrder.includes(id);
+      if (!wasOpen) openWindow(id, { force: true });
+      entry = { owner, opened: !wasOpen, refs: 0 };
+      leases.set(id, entry);
+    }
+    entry.refs += 1;
+    let released = false;
+    return {
+      id,
+      release() {
+        if (released) return;
+        released = true;
+        entry.refs -= 1;
+        if (entry.refs === 0) {
+          leases.delete(id);
+          if (entry.opened) closeWindow(id, { force: true });
+        }
+      },
+    };
+  };
+  const withWindow = async (id, fn, owner = "anonymous") => {
+    const lease = acquire(id, owner);
+    try {
+      return await fn();
+    } finally {
+      lease.release();
+    }
+  };
+  return { acquire, withWindow };
+})();
+
 function toggleWindow(id) {
   if (openOrder.includes(id)) closeWindow(id);
   else openWindow(id);
@@ -16718,6 +16755,8 @@ window.__battleDebug = () => ({
   renderCube, // ライブ参照(細工画面の再描画用)
   renderBreed, // ライブ参照(配合ウィンドウの再描画)
   renderHud, // ライブ参照(HUD・宝箱チップの再描画。テスト検証用)
+  closeWindow, // ライブ参照(自動化後にアイテム窓を閉じる)
+  windowManager, // ライブ参照(自動化の一時窓をスコープ管理)
   scene, // ライブ参照(戦闘演出の実機検査用: verify-battle-flash)
   openChestOfKind, // ライブ参照(宝箱一括開封のテスト用)
   enemyGroup: [...enemyGroup],

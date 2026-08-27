@@ -39,6 +39,7 @@
     .ultra-debug{margin-top:12px;min-height:180px;max-height:380px;overflow:auto;border:2px solid var(--line);background:#071b2d;color:#9ee7b2;padding:14px;white-space:pre-wrap;font:12px/1.5 Consolas,monospace}.turbo-console,.automation-log,.ultra-debug{user-select:text;-webkit-user-select:text;cursor:text}
     @media(max-width:760px){.craft-settings-head{display:block}.craft-settings-head span{display:block;margin-top:4px}.craft-rule{grid-template-columns:1fr}.craft-rule-threshold{justify-content:space-between}.craft-rule-operator select{width:100%}}
     .etch-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:end;border:2px solid var(--line);background:linear-gradient(145deg,#fffdf0,var(--panel2));padding:14px;box-shadow:var(--shadow)}.etch-controls label{display:flex;flex-direction:column;gap:4px;color:var(--blue-deep);font:700 11px Consolas,monospace;text-transform:uppercase}.etch-controls select{min-width:170px;border:2px solid var(--line);background:var(--cream);color:var(--ink);padding:8px}.etch-item-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:9px;margin-top:14px}.etch-item{border:2px solid var(--line);background:var(--cream);padding:11px;text-align:left;cursor:pointer;color:var(--ink)}.etch-item.selected{border-color:var(--green);box-shadow:0 0 0 3px rgba(47,154,86,.25)}.etch-item strong,.etch-item span{display:block}.etch-item span,.etch-slot small{color:var(--muted);font:11px Consolas,monospace}.etch-slots,.etch-pool{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin-top:12px}.etch-slot{border:1px solid var(--line);background:var(--panel2);padding:10px;text-align:left;cursor:pointer}.etch-slot.selected{border:2px solid var(--amber)}.etch-slot b{display:block;color:var(--blue-deep)}.etch-log{margin-top:12px;min-height:100px;max-height:240px;overflow:auto;border:2px solid var(--line);background:#071b2d;color:#9ee7b2;padding:14px;white-space:pre-wrap;font:12px/1.5 Consolas,monospace}
+    .syslog{margin-top:12px;min-height:180px;max-height:360px;overflow:auto;border:2px solid var(--line);background:#071b2d;color:#9ee7b2;padding:14px;white-space:pre-wrap;font:12px/1.5 Consolas,monospace}
   </style>
 </head>
 <body>
@@ -110,6 +111,7 @@
       </section>
       <section class="section"><div class="section-head"><div class="label">Egg and awakening automation</div><div class="note">Opt-in; checks every 5 seconds</div></div><div class="egg-automation"><label><input type="checkbox" id="autoOpenUltra"> Auto-open eggs up to</label><select id="autoOpenRarity" aria-label="Maximum egg rarity"><option value="ultra" selected>Ultra</option><option value="legend">Legendary</option><option value="immortal">Immortal</option><option value="arcana">Arcana</option><option value="beyond">Beyond</option><option value="century">Century</option><option value="cosmic">Cosmic</option><option value="celestial">Celestial</option></select><label><input type="checkbox" id="autoCondenseUltra"> Awaken duplicate Ultra and Legendary monsters</label><span class="egg-automation-status" id="ultraAutomationStatus">Automation off</span></div></section>
       <section class="section"><div class="section-head"><div class="label">High-rarity leveling</div><div class="note">Runs stage 8-5 until every awakened Ultra, Legendary, and Immortal reaches level 90</div></div><div class="egg-automation"><label><input type="checkbox" id="autoLevelUltra"> Level Ultra, Legendary, and Immortal monsters to 90</label><span class="egg-automation-status" id="ultraLevelingStatus">Automation off</span></div><pre class="ultra-debug" id="ultraLevelingConsole" tabindex="0">High-rarity leveling console waiting.</pre></section>
+      <section class="section"><div class="section-head"><div class="label">Input syslog</div><div class="note" id="activeInputs">No active input process</div></div><pre class="syslog" id="syslog" tabindex="0">Input syslog waiting.</pre></section>
     </div>
     <p class="note warning" id="warning">Rates begin after the first two samples.</p>
   </main>
@@ -213,6 +215,13 @@
       $("ultraLevelingConsole").textContent = leveling.logs?.length
         ? leveling.logs.map((entry) => `${new Date(entry.at).toLocaleTimeString()} | ${entry.message}`).join("\n")
         : "High-rarity leveling console waiting.";
+    }
+    function renderSyslog(entries, activeInputs) {
+      const active = activeInputs?.length ? activeInputs.join(", ") : "No active input process";
+      $("activeInputs").textContent = active;
+      $("syslog").textContent = entries?.length
+        ? entries.map((entry) => `${new Date(entry.at).toLocaleTimeString()} | ${entry.process} | ${entry.action} | ${entry.status}${entry.blockers?.length ? ` | blocked by ${entry.blockers.join(", ")}` : ""}${entry.error ? ` | ${entry.error}` : ""}${entry.trace?.length ? `\n    trace: ${entry.trace.map((step) => `${step.phase}${step.monsterId ? `(${step.monsterId})` : ""}`).join(" > ")}` : ""}`).join("\n")
+        : "Input syslog waiting.";
     }
     let etchingData = null;
     let etchingRefreshBusy = false;
@@ -389,6 +398,7 @@
         renderUltraAutomation(data.ultraAutomation);
         renderUltraLeveling(data.ultraLeveling);
         renderCrafting(data.crafting);
+        renderSyslog(data.syslog, data.activeInputs);
         if (etchingData?.running || etchingPollingUntil > Date.now()) loadEtching().catch(() => {});
         $("turboPulse").classList.toggle("turbo-active", data.turbo === true);
         $("turboPulse").textContent = data.turbo === true ? "Turbo running" : "Start Turbo";

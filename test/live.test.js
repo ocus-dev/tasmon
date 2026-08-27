@@ -1,6 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createLiveMetrics, selectAwakeningRitual } from "../src/live.js";
+import { autoOpenEggAllowed, createLiveMetrics, eggSlotIndex, pageSearchOrder, selectAwakeningRitual } from "../src/live.js";
+
+test("egg auto-opening only allows Ultra through the selected maximum rarity", () => {
+  assert.equal(autoOpenEggAllowed("common", "ultra"), false);
+  assert.equal(autoOpenEggAllowed("rare", "ultra"), false);
+  assert.equal(autoOpenEggAllowed("ultra", "ultra"), true);
+  assert.equal(autoOpenEggAllowed("legend", "ultra"), false);
+  assert.equal(autoOpenEggAllowed("legend", "legend"), true);
+});
+
+test("egg slot lookup preserves the state order used by the rendered grid", () => {
+  const eggs = [{ id: "first", rarity: "ultra" }, { id: "second", rarity: "legend" }];
+
+  assert.equal(eggSlotIndex(eggs, "first"), 0);
+  assert.equal(eggSlotIndex(eggs, "second"), 1);
+  assert.equal(eggSlotIndex(eggs, "missing"), -1);
+});
 
 test("awakening selects the highest non-six target and all zero-awakened fodder", () => {
   const monsters = [
@@ -119,4 +135,10 @@ test("live metrics keep historical drops out of the session egg rate", () => {
   assert.deepEqual(result.eggDrops, [{ timestamp: 0, rarity: "common" }, { timestamp: 31_000, rarity: "rare" }]);
   assert.deepEqual(result.sessionEggDrops, [{ timestamp: 31_000, rarity: "rare" }]);
   assert.equal(result.rates.eggsPerHour, 0);
+});
+
+test("etching searches the current box page before later pages", () => {
+  assert.deepEqual(pageSearchOrder(3, 0), [0, 1, 2]);
+  assert.deepEqual(pageSearchOrder(3, 1), [1, 2, 0]);
+  assert.deepEqual(pageSearchOrder(0), []);
 });

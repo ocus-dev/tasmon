@@ -8,6 +8,7 @@ import { ENHANCE_GRADES, ENHANCE_KINDS, ENHANCE_PART_CAT_LABEL, ENHANCE_PART_POO
 import { resolvePartyAttack } from "./real-stats.js";
 import { renderReport } from "./report.js";
 import { runCraftController } from "./craft-controller.js";
+import { InputCoordinator, InputService, ProcessLogger } from "./process-service.js";
 
 const LEVEL_CAP = 100;
 const EMA_TIME_CONSTANT_MS = 30_000;
@@ -331,6 +332,23 @@ function englishSpeciesName(id) {
     .replace(/([a-z])([A-Z])/g, "$1 $2")
     .replace(/[-_]+/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+export function autoOpenEggAllowed(eggRarity, maximumRarity = "ultra", rarityOrder = RARITY_ORDER) {
+  const eggRank = rarityOrder.indexOf(eggRarity);
+  const maximumRank = rarityOrder.indexOf(maximumRarity);
+  const ultraRank = rarityOrder.indexOf("ultra");
+  return eggRank >= ultraRank && eggRank <= maximumRank;
+}
+
+export function eggSlotIndex(eggs, eggId) {
+  return (eggs ?? []).findIndex((egg) => egg.id === eggId);
+}
+
+export function pageSearchOrder(pageCount, currentPage = 0) {
+  if (!Number.isInteger(pageCount) || pageCount <= 0) return [];
+  const start = Math.min(Math.max(0, currentPage), pageCount - 1);
+  return Array.from({ length: pageCount }, (_, offset) => (start + offset) % pageCount);
 }
 
 function awakeningExpression() {
@@ -722,6 +740,16 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
       .catch((error) => console.warn(`Unable to persist egg log: ${error.message}`));
   };
   const metrics = createLiveMetrics({ initialEggDrops, persistEggDrops });
+  const processLogger = new ProcessLogger();
+  const inputCoordinator = new InputCoordinator(processLogger);
+  const inputServices = {
+    ultraAutomation: new InputService("ultra-automation", inputCoordinator),
+    ultraLeveling: new InputService("ultra-leveling", inputCoordinator),
+    etching: new InputService("etching", inputCoordinator),
+    crafting: new InputService("crafting", inputCoordinator),
+    awakening: new InputService("awakening", inputCoordinator),
+    turbo: new InputService("turbo", inputCoordinator),
+  };
   const poll = async () => {
     try {
       const snapshot = await readLiveSnapshot(endpoint);
@@ -745,15 +773,18 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
   const ultraAutomation = { open: false, openRarity: "ultra", condense: false, busy: false, last: null, lastError: null };
   const runUltraAutomation = async () => {
     if (ultraAutomation.busy || (!ultraAutomation.open && !ultraAutomation.condense)) return;
-    ultraAutomation.busy = true;
-    try {
-      ultraAutomation.last = await evaluateRuntime(ultraAutomationExpression(ultraAutomation), endpoint, { awaitPromise: true });
-      ultraAutomation.lastError = ultraAutomation.last?.error ?? null;
-    } catch (error) {
-      ultraAutomation.lastError = error.message;
-    } finally {
-      ultraAutomation.busy = false;
-    }
+    const execution = await inputServices.ultraAutomation.run("automation-cycle", async () => {
+      ultraAutomation.busy = true;
+      try {
+        ultraAutomation.last = await evaluateRuntime(ultraAutomationExpression(ultraAutomation), endpoint, { awaitPromise: true });
+        ultraAutomation.lastError = ultraAutomation.last?.error ?? null;
+      } catch (error) {
+        ultraAutomation.lastError = error.message;
+      } finally {
+        ultraAutomation.busy = false;
+      }
+    });
+    if (!execution.accepted) ultraAutomation.lastError = `Input busy: ${execution.blockers.join(", ")}`;
   };
   const ultraAutomationTimer = setInterval(runUltraAutomation, 5_000);
   const ultraLeveling = { enabled: false, running: false, last: null, lastError: null, logs: [], levels: new Map(), restored: false };
@@ -763,60 +794,63 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
   };
   const runUltraLeveling = async () => {
     if (!ultraLeveling.enabled || ultraLeveling.running) return;
-    ultraLeveling.running = true;
-    try {
-      ultraLeveling.last = await evaluateRuntime(levelUltraExpression(), endpoint, { awaitPromise: true });
-      ultraLeveling.lastError = ultraLeveling.last?.error ?? null;
-      if (ultraLeveling.lastError) {
-        logUltraLeveling(`Error: ${ultraLeveling.lastError}`);
-      } else {
-        for (const monster of ultraLeveling.last?.debug?.trainable ?? []) {
-          const previousLevel = ultraLeveling.levels.get(monster.id);
-          if (previousLevel !== undefined && monster.level > previousLevel) {
-            logUltraLeveling(`${monster.id} leveled to ${monster.level}`);
+    const execution = await inputServices.ultraLeveling.run("leveling-cycle", async () => {
+      ultraLeveling.running = true;
+      try {
+        ultraLeveling.last = await evaluateRuntime(levelUltraExpression(), endpoint, { awaitPromise: true });
+        ultraLeveling.lastError = ultraLeveling.last?.error ?? null;
+        if (ultraLeveling.lastError) {
+          logUltraLeveling(`Error: ${ultraLeveling.lastError}`);
+        } else {
+          for (const monster of ultraLeveling.last?.debug?.trainable ?? []) {
+            const previousLevel = ultraLeveling.levels.get(monster.id);
+            if (previousLevel !== undefined && monster.level > previousLevel) {
+              logUltraLeveling(`${monster.id} leveled to ${monster.level}`);
+            }
+            ultraLeveling.levels.set(monster.id, monster.level);
           }
-          ultraLeveling.levels.set(monster.id, monster.level);
+          for (const swap of ultraLeveling.last?.swapped ?? []) logUltraLeveling(`${swap.id} swapped in`);
+          if (ultraLeveling.last?.complete && ultraLeveling.last.restored && !ultraLeveling.restored) {
+            logUltraLeveling("All awakened Ultra, Legendary, and Immortal monsters leveled; original party restored at 10-9");
+            ultraLeveling.restored = true;
+          }
         }
-        for (const swap of ultraLeveling.last?.swapped ?? []) logUltraLeveling(`${swap.id} swapped in`);
-        if (ultraLeveling.last?.complete && ultraLeveling.last.restored && !ultraLeveling.restored) {
-          logUltraLeveling("All awakened Ultra, Legendary, and Immortal monsters leveled; original party restored at 10-9");
-          ultraLeveling.restored = true;
-        }
+      } catch (error) {
+        ultraLeveling.lastError = error.message;
+        logUltraLeveling(`Runtime error: ${error.message}`);
+      } finally {
+        ultraLeveling.running = false;
       }
-    } catch (error) {
-      ultraLeveling.lastError = error.message;
-      logUltraLeveling(`Runtime error: ${error.message}`);
-    } finally {
-      ultraLeveling.running = false;
-    }
+    });
+    if (!execution.accepted) logUltraLeveling(`Input busy: ${execution.blockers.join(", ")}`);
   };
   const ultraLevelingTimer = setInterval(runUltraLeveling, 5_000);
   const etching = { running: false, stop: false, itemId: null, slotIdx: null, target: null, attempts: 0, last: null, error: null };
   const runEtching = async () => {
     if (etching.running) return;
-    etching.running = true;
-    etching.stop = false;
-    etching.attempts = 0;
-    etching.error = null;
-    try {
-      while (!etching.stop && etching.attempts < 5000) {
-        const result = await evaluateRuntime(etchingRollExpression(etching.itemId, etching.slotIdx, etching.target), endpoint, { awaitPromise: true });
-        etching.attempts += 1;
-        etching.last = result;
-        if (etching.attempts <= 3 || result?.error || result?.matches) {
-          console.log(`[etching] attempt=${etching.attempts} action=${result?.action ?? "unknown"} matches=${Boolean(result?.matches)} error=${result?.error ?? "none"}`);
+    const execution = await inputServices.etching.run("roll-loop", async () => {
+      etching.running = true;
+      etching.stop = false;
+      etching.attempts = 0;
+      etching.error = null;
+      try {
+        while (!etching.stop && etching.attempts < 5000) {
+          const result = await evaluateRuntime(etchingRollExpression(etching.itemId, etching.slotIdx, etching.target), endpoint, { awaitPromise: true });
+          etching.attempts += 1;
+          etching.last = result;
+          processLogger.write("etching", "roll-attempt", { status: result?.error ? "failed" : result?.matches ? "matched" : "completed", attempt: etching.attempts, action: result?.action ?? "unknown", error: result?.error ?? null, trace: result?.trace ?? null });
+          if (result?.error || result?.matches) break;
         }
-        if (result?.error || result?.matches) break;
+        if (!etching.stop && !etching.last?.matches && !etching.last?.error && !etching.error) {
+          etching.error = "Etching did not find the selected modifier within 5,000 rolls";
+        }
+      } catch (error) {
+        etching.error = error.message;
+      } finally {
+        etching.running = false;
       }
-      if (!etching.stop && !etching.last?.matches && !etching.last?.error && !etching.error) {
-        etching.error = "Etching did not find the selected modifier within 5,000 rolls";
-        console.warn(`[etching] stopped after ${etching.attempts} rolls without a match`, etching.last);
-      }
-    } catch (error) {
-      etching.error = error.message;
-    } finally {
-      etching.running = false;
-    }
+    });
+    if (!execution.accepted) etching.error = `Input busy: ${execution.blockers.join(", ")}`;
   };
   const craftAutomation = {
     running: false,
@@ -864,7 +898,6 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
   };
   const startCraftAutomation = ({ mode, minAtkPct, minSkillPower, minHpPct, atkEnabled, skillEnabled, hpEnabled, useGotchaTokens, storeLockedItems, atkOperator, skillOperator, hpOperator }) => {
     if (craftAutomation.running) throw new Error("Craft automation is already running");
-    craftAutomation.running = true;
     craftAutomation.mode = mode;
     craftAutomation.minAtkPct = minAtkPct;
     craftAutomation.minSkillPower = minSkillPower;
@@ -883,29 +916,38 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     craftAutomation.lastError = null;
     craftAutomation.logs = [];
     craftAutomation.controller = new AbortController();
-    runCraftController({
-      endpoint,
-      mode,
-      maxRuns: 1,
-      confirm: true,
-      loop: true,
-      minAtkPct,
-      minSkillPower,
-      minHpPct,
-      atkEnabled,
-      skillEnabled,
-      hpEnabled,
-      useGotchaTokens,
-      storeLockedItems,
-      atkOperator,
-      skillOperator,
-      hpOperator,
-      signal: craftAutomation.controller.signal,
-      log: (message) => {
-        craftAutomation.logs.push({ at: Date.now(), message });
-        craftAutomation.logs = craftAutomation.logs.slice(-60);
-      },
-    }).then((result) => {
+    inputServices.crafting.run("craft-loop", async () => {
+      craftAutomation.running = true;
+      return runCraftController({
+        endpoint,
+        mode,
+        maxRuns: 1,
+        confirm: true,
+        loop: true,
+        minAtkPct,
+        minSkillPower,
+        minHpPct,
+        atkEnabled,
+        skillEnabled,
+        hpEnabled,
+        useGotchaTokens,
+        storeLockedItems,
+        atkOperator,
+        skillOperator,
+        hpOperator,
+        signal: craftAutomation.controller.signal,
+        log: (message) => {
+          craftAutomation.logs.push({ at: Date.now(), message });
+          craftAutomation.logs = craftAutomation.logs.slice(-60);
+        },
+      });
+    }).then((execution) => {
+      if (!execution.accepted) {
+        craftAutomation.lastError = `Input busy: ${execution.blockers.join(", ")}`;
+        craftAutomation.exitReason = "input-busy";
+        return;
+      }
+      const result = execution.result;
       craftAutomation.runs = result.results.filter((entry) => entry.crafted).length;
       const last = result.results.at(-1);
       craftAutomation.lastResult = last ? { crafted: last.crafted, verified: last.verified, reason: last.reason ?? null } : null;
@@ -966,7 +1008,12 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     if (pathname === "/api/live") {
       await refreshTurboState();
       response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
-      response.end(JSON.stringify({ ...metrics.read(), turbo: turboEnabled, turboPhase, turboKeys, turboStack, turboLastAction, turboLog, ultraAutomation: { ...ultraAutomation }, ultraLeveling: { enabled: ultraLeveling.enabled, running: ultraLeveling.running, last: ultraLeveling.last, lastError: ultraLeveling.lastError, logs: ultraLeveling.logs }, crafting: craftStatus() }));
+      response.end(JSON.stringify({ ...metrics.read(), turbo: turboEnabled, turboPhase, turboKeys, turboStack, turboLastAction, turboLog, ultraAutomation: { ...ultraAutomation }, ultraLeveling: { enabled: ultraLeveling.enabled, running: ultraLeveling.running, last: ultraLeveling.last, lastError: ultraLeveling.lastError, logs: ultraLeveling.logs }, crafting: craftStatus(), syslog: processLogger.read(), activeInputs: inputCoordinator.activeProcesses() }));
+      return;
+    }
+    if (pathname === "/api/syslog" && request.method === "GET") {
+      response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+      response.end(JSON.stringify({ entries: processLogger.read(), activeInputs: inputCoordinator.activeProcesses() }));
       return;
     }
     if (pathname === "/api/report") {
@@ -1129,13 +1176,22 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
         const targetId = typeof body.targetId === "string" ? body.targetId : "";
         const foodIds = Array.isArray(body.foodIds) ? body.foodIds.filter((id) => typeof id === "string") : [];
         if (!targetId || foodIds.length === 0) throw new Error("Choose a target and at least one duplicate");
-        const result = await evaluateRuntime(awakenUiExpression(targetId, foodIds), endpoint, { awaitPromise: true });
+        const execution = await inputServices.awakening.run("ritual", async () => {
+          const result = await evaluateRuntime(awakenUiExpression(targetId, foodIds), endpoint, { awaitPromise: true });
+          const inventory = await evaluateRuntime(awakeningExpression(), endpoint);
+          return { result, inventory };
+        });
+        if (!execution.accepted) {
+          response.writeHead(409, { "content-type": "application/json; charset=utf-8" });
+          response.end(JSON.stringify({ error: "input-busy", blockers: execution.blockers }));
+          return;
+        }
+        const { result, inventory } = execution.result;
         if (result?.error) {
           response.writeHead(400, { "content-type": "application/json; charset=utf-8" });
           response.end(JSON.stringify(result));
           return;
         }
-        const inventory = await evaluateRuntime(awakeningExpression(), endpoint);
         response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         response.end(JSON.stringify({ result, inventory }));
       } catch (error) {
@@ -1177,7 +1233,13 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     }
     if (pathname === "/api/turbo" && request.method === "POST") {
       try {
-        const turbo = await setTurboRespawn(true, endpoint);
+        const execution = await inputServices.turbo.run("activate", () => setTurboRespawn(true, endpoint));
+        if (!execution.accepted) {
+          response.writeHead(409, { "content-type": "application/json; charset=utf-8" });
+          response.end(JSON.stringify({ error: "input-busy", blockers: execution.blockers }));
+          return;
+        }
+        const turbo = execution.result;
         const keys = await readKeySnapshot(endpoint);
         turboEnabled = Boolean(turbo?.enabled ?? turbo);
         turboKeys = keys?.current ?? turbo?.keyCount ?? 0;
@@ -1199,7 +1261,12 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     }
     if (pathname === "/api/turbo/stop" && request.method === "POST") {
       try {
-        await setTurboRespawn(false, endpoint);
+        const execution = await inputServices.turbo.run("stop", () => setTurboRespawn(false, endpoint));
+        if (!execution.accepted) {
+          response.writeHead(409, { "content-type": "application/json; charset=utf-8" });
+          response.end(JSON.stringify({ error: "input-busy", blockers: execution.blockers }));
+          return;
+        }
         turboEnabled = false;
         turboPhase = null;
         turboKeys = 0;
@@ -1268,12 +1335,12 @@ function ultraAutomationExpression({ open, openRarity, condense }) {
       }
       return Boolean(!document.querySelector("#hatch-overlay:not(.hidden)"));
     };
-    if (${Boolean(open)}) {
+    const openEggs = async () => {
       for (const { egg } of openableEggIndexes()) {
         if (!(await closeHatchPopup())) { result.skipped.push("Hatch popup could not close: " + egg.id); continue; }
         const currentIndex = (state.eggs ?? []).findIndex((candidate) => candidate.id === egg.id);
         if (currentIndex < 0) continue;
-        const slots = [...document.querySelectorAll(".egg-slot.filled")];
+        const slots = [...document.querySelectorAll("#egg-slots .egg-slot")];
         const slot = slots[currentIndex];
         if (!slot) { result.skipped.push("Egg slot unavailable: " + egg.id); continue; }
         const before = state.eggs.length;
@@ -1294,6 +1361,11 @@ function ultraAutomationExpression({ open, openRarity, condense }) {
           else result.skipped.push("Hatch popup did not close: " + egg.id);
         } else result.skipped.push("Hatch did not complete: " + egg.id);
       }
+    };
+    if (${Boolean(open)}) {
+      const withWindow = debug.windowManager?.withWindow?.bind(debug.windowManager);
+      if (withWindow) await withWindow("eggs", openEggs, "ultra-egg-opening");
+      else await openEggs();
     }
     if (${Boolean(condense)}) {
       const groups = new Map();
@@ -1577,18 +1649,21 @@ function etchingSnapshotExpression() {
 function etchingRollExpression(itemId, slotIdx, target) {
   return `(async () => {
     const debug = window.__battleDebug?.();
+    const trace = [];
+    const mark = (phase, detail = {}) => trace.push({ phase, ...detail });
+    mark("start", { enhanceRollSlot: typeof debug?.enhanceRollSlot === "function" });
     const state = debug?.state;
-    if (!state) return { error: "TASMON debug object is unavailable" };
+    if (!state) return { error: "TASMON debug object is unavailable", trace };
     const before = [...(state.items ?? []), ...(state.storage ?? []), ...Object.values(state.monsters ?? {}).flatMap((monster) => monster.equipment ?? [])]
       .find((item) => item.id === ${JSON.stringify(itemId)})?.enhances?.[${Number(slotIdx)}] ?? null;
     const selectedItem = [...(state.items ?? []), ...(state.storage ?? []), ...Object.values(state.monsters ?? {}).flatMap((monster) => monster.equipment ?? [])]
       .find((item) => item.id === ${JSON.stringify(itemId)});
     if (typeof debug.enhanceRollSlot === "function") {
       const result = debug.enhanceRollSlot(state, ${JSON.stringify(itemId)}, ${Number(slotIdx)});
-      if (result.error) return { error: result.error, before };
+      if (result.error) return { error: result.error, before, action: "debug", trace };
       const after = result.after ?? null;
       const matches = ${JSON.stringify(target)} === (after?.stat ?? after?.skill);
-      return { ok: true, cost: result.cost, before, after, matches, action: "debug" };
+      return { ok: true, cost: result.cost, before, after, matches, action: "debug", trace };
     }
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const text = (node) => node?.textContent?.replace(/\\s+/g, " ").trim() ?? "";
@@ -1597,8 +1672,35 @@ function etchingRollExpression(itemId, slotIdx, target) {
       const box = node.getBoundingClientRect();
       return getComputedStyle(node).display !== "none" && getComputedStyle(node).visibility !== "hidden" && box.width > 0 && box.height > 0;
     };
+    const sessionKey = ${JSON.stringify(itemId)} + ":" + ${Number(slotIdx)};
+    const existingSession = window.__tasmonEtchingSession;
+    const existingCube = document.querySelector("#cube-body");
+    if (existingSession?.key === sessionKey && visible(existingCube)) {
+      mark("reuse-ui-session");
+      const roll = existingCube.querySelector(".enh-tiers button");
+      if (!roll || roll.disabled) return { error: "Etching roll button is unavailable", before, trace };
+      roll.click();
+      if (before) {
+        await sleep(60);
+        const confirmedRoll = document.querySelector("#cube-body .enh-tiers button");
+        if (!confirmedRoll || confirmedRoll.disabled) return { error: "Etching overwrite confirmation is unavailable", before, trace };
+        confirmedRoll.click();
+      }
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        const current = [...(state.items ?? []), ...(state.storage ?? []), ...Object.values(state.monsters ?? {}).flatMap((monster) => monster.equipment ?? [])].find((entry) => entry.id === ${JSON.stringify(itemId)})?.enhances?.[${Number(slotIdx)}] ?? null;
+        if (current && JSON.stringify(current) !== JSON.stringify(before)) {
+          return { ok: true, cost: null, before, after: current, matches: ${JSON.stringify(target)} === (current.stat ?? current.skill), action: "ui", trace };
+        }
+        await sleep(50);
+      }
+      return { error: "Visible etching roll did not update the item", before, trace };
+    }
     const compoundTab = document.querySelector('.bar-tab[data-win="compound"]');
-    if (compoundTab) compoundTab.click();
+    mark("fallback-ui", { compoundTab: Boolean(compoundTab) });
+    if (compoundTab) {
+      compoundTab.click();
+      mark("compound-open-requested", { compoundMode: typeof window.compoundMode === "string" ? window.compoundMode : "unknown" });
+    }
     await sleep(120);
     let cubeBody = document.querySelector("#cube-body");
     let mode = cubeBody?.querySelector("select.cube-band");
@@ -1618,16 +1720,40 @@ function etchingRollExpression(itemId, slotIdx, target) {
       if (sourceTab && !visible(document.querySelector("#" + source + "-panel"))) sourceTab.click();
       await sleep(150);
     } else {
-      let monsterCell = document.querySelector('.mon-cell[data-mon="' + CSS.escape(equippedMonster.id) + '"]');
+      const compoundWasOpen = visible(document.querySelector("#compound-panel"));
+      mark("equipped-item", { compoundWasOpen });
+      if (compoundWasOpen && typeof debug.closeWindow === "function") {
+        debug.closeWindow("compound", { force: true });
+        mark("compound-closed-before-monster-selection");
+        await sleep(100);
+      }
+      const findMonsterCell = () => document.querySelector('.mon-cell[data-mon="' + CSS.escape(equippedMonster.id) + '"]');
+      let monsterCell = findMonsterCell();
       if (!monsterCell) {
         const boxTab = document.querySelector('.bar-tab[data-win="box"]');
         if (boxTab) boxTab.click();
         await sleep(100);
-        monsterCell = document.querySelector('.mon-cell[data-mon="' + CSS.escape(equippedMonster.id) + '"]');
+        monsterCell = findMonsterCell();
+      }
+      if (!monsterCell) {
+        const pageCount = document.querySelectorAll("#box-list .page-tab").length;
+        for (let pageIndex = 0; pageIndex < pageCount && !monsterCell; pageIndex += 1) {
+          const pageTab = document.querySelectorAll("#box-list .page-tab")[pageIndex];
+          if (pageTab.classList.contains("on")) continue;
+          pageTab.click();
+          await sleep(100);
+          monsterCell = findMonsterCell();
+        }
       }
       if (!monsterCell) return { error: "Equipped monster is not visible in the game UI", before };
+      mark("monster-cell-click", { monsterId: equippedMonster.id });
       monsterCell.click();
       await sleep(150);
+      if (compoundWasOpen) {
+        compoundTab.click();
+        mark("compound-reopened-for-etching");
+        await sleep(120);
+      }
     }
     const sortOrder = ["common", "rare", "ultra", "legend", "immortal", "arcana", "beyond", "century", "cosmic", "celestial"];
     const sourceItems = source ? [...(source === "inv" ? state.items : state.storage)].sort((left, right) => sortOrder.indexOf(right.rarity) - sortOrder.indexOf(left.rarity) || (right.obtainedAt ?? 0) - (left.obtainedAt ?? 0)) : [];
@@ -1656,7 +1782,7 @@ function etchingRollExpression(itemId, slotIdx, target) {
       const heroCells = [...document.querySelectorAll("#detail-panel .hero-equip-cell")];
       itemCell = heroCells[equipmentIndex];
     }
-    if (!itemCell || !visible(itemCell)) return { error: "Selected item cell is not visible", before };
+    if (!itemCell || !visible(itemCell)) return { error: "Selected item cell is not visible", before, trace };
     if (source) {
       itemCell.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
     } else {
@@ -1670,6 +1796,7 @@ function etchingRollExpression(itemId, slotIdx, target) {
       itemCell.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer: transfer }));
     }
     await sleep(120);
+    window.__tasmonEtchingSession = { key: sessionKey };
     const ladders = { legend: ["adorn", "inscribe"], immortal: ["adorn", "inscribe", "carve"], arcana: ["adorn", "inscribe", "carve", "adorn"], beyond: ["adorn", "inscribe", "carve", "adorn", "inscribe"], century: ["adorn", "inscribe", "carve", "adorn", "inscribe", "carve"], cosmic: ["adorn", "inscribe", "carve", "adorn", "inscribe", "carve", "adorn"], celestial: ["adorn", "inscribe", "carve", "adorn", "inscribe", "carve", "adorn", "inscribe"] };
     const item = source ? sourceItems[itemIndex] : selectedItem;
     if (!item) return { error: "Selected item no longer exists", before };
@@ -1677,20 +1804,20 @@ function etchingRollExpression(itemId, slotIdx, target) {
     const displayOrder = slots.map((_, index) => index).sort((left, right) => ({ adorn: 0, inscribe: 1, carve: 2 }[slots[left]] ?? 9) - ({ adorn: 0, inscribe: 1, carve: 2 }[slots[right]] ?? 9) || left - right);
     const slotButtons = [...document.querySelectorAll("#cube-body .enh-slot-chip")];
     const slotButton = slotButtons[displayOrder.indexOf(${Number(slotIdx)})];
-    if (!slotButton) return { error: "Selected etching slot is not visible", before };
+    if (!slotButton) return { error: "Selected etching slot is not visible", before, trace };
     slotButton.click();
     await sleep(60);
     const roll = document.querySelector("#cube-body .enh-tiers button");
-    if (!roll || roll.disabled) return { error: "Etching roll button is unavailable", before };
+    if (!roll || roll.disabled) return { error: "Etching roll button is unavailable", before, trace };
     roll.click();
     if (before) { await sleep(60); roll.click(); }
     for (let attempt = 0; attempt < 20; attempt += 1) {
       const current = [...(state.items ?? []), ...(state.storage ?? []), ...Object.values(state.monsters ?? {}).flatMap((monster) => monster.equipment ?? [])].find((entry) => entry.id === ${JSON.stringify(itemId)})?.enhances?.[${Number(slotIdx)}] ?? null;
       if (current && JSON.stringify(current) !== JSON.stringify(before)) {
-        return { ok: true, cost: null, before, after: current, matches: ${JSON.stringify(target)} === (current.stat ?? current.skill), action: "ui" };
+        return { ok: true, cost: null, before, after: current, matches: ${JSON.stringify(target)} === (current.stat ?? current.skill), action: "ui", trace };
       }
       await sleep(50);
     }
-    return { error: "Visible etching roll did not update the item", before };
+    return { error: "Visible etching roll did not update the item", before, trace };
   })()`;
 }
