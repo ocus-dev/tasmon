@@ -299,8 +299,11 @@ const CRAFT_MAINTENANCE = (useGotchaTokens, storeLockedItems) => `(async () => {
         stored += 1;
       }
     };
-    if (withWindow) await withWindow("items", storeItems, "craft-item-storage");
-    else await storeItems();
+    try {
+      await storeItems();
+    } finally {
+      debug.closeWindow?.("items", { force: true });
+    }
   }
   localStorage.setItem("taskbar-idle-rpg-save", JSON.stringify(state));
   debug.renderHud?.();

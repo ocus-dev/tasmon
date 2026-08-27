@@ -39,7 +39,7 @@
     .ultra-debug{margin-top:12px;min-height:180px;max-height:380px;overflow:auto;border:2px solid var(--line);background:#071b2d;color:#9ee7b2;padding:14px;white-space:pre-wrap;font:12px/1.5 Consolas,monospace}.turbo-console,.automation-log,.ultra-debug{user-select:text;-webkit-user-select:text;cursor:text}
     @media(max-width:760px){.craft-settings-head{display:block}.craft-settings-head span{display:block;margin-top:4px}.craft-rule{grid-template-columns:1fr}.craft-rule-threshold{justify-content:space-between}.craft-rule-operator select{width:100%}}
     .etch-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:end;border:2px solid var(--line);background:linear-gradient(145deg,#fffdf0,var(--panel2));padding:14px;box-shadow:var(--shadow)}.etch-controls label{display:flex;flex-direction:column;gap:4px;color:var(--blue-deep);font:700 11px Consolas,monospace;text-transform:uppercase}.etch-controls select{min-width:170px;border:2px solid var(--line);background:var(--cream);color:var(--ink);padding:8px}.etch-item-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:9px;margin-top:14px}.etch-item{border:2px solid var(--line);background:var(--cream);padding:11px;text-align:left;cursor:pointer;color:var(--ink)}.etch-item.selected{border-color:var(--green);box-shadow:0 0 0 3px rgba(47,154,86,.25)}.etch-item strong,.etch-item span{display:block}.etch-item span,.etch-slot small{color:var(--muted);font:11px Consolas,monospace}.etch-slots,.etch-pool{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin-top:12px}.etch-slot{border:1px solid var(--line);background:var(--panel2);padding:10px;text-align:left;cursor:pointer}.etch-slot.selected{border:2px solid var(--amber)}.etch-slot b{display:block;color:var(--blue-deep)}.etch-log{margin-top:12px;min-height:100px;max-height:240px;overflow:auto;border:2px solid var(--line);background:#071b2d;color:#9ee7b2;padding:14px;white-space:pre-wrap;font:12px/1.5 Consolas,monospace}
-    .syslog{margin-top:12px;min-height:180px;max-height:360px;overflow:auto;border:2px solid var(--line);background:#071b2d;color:#9ee7b2;padding:14px;white-space:pre-wrap;font:12px/1.5 Consolas,monospace}
+    .syslog{margin-top:12px;min-height:180px;max-height:360px;overflow:auto;border:2px solid var(--line);background:#071b2d;color:#9ee7b2;padding:14px;white-space:pre-wrap;font:12px/1.5 Consolas,monospace}.etch-skill-stop{display:flex;align-items:center;gap:7px;margin-top:12px;color:var(--blue-deep);font-weight:800}.etch-skill-stop input{width:18px;height:18px;accent-color:var(--green)}
   </style>
 </head>
 <body>
@@ -95,7 +95,7 @@
         <div class="etch-item-grid" id="etchItems"></div>
         <div class="section-head" style="margin-top:24px"><div class="label">2 / Modifier</div><div class="note" id="etchPoolNote">Select an item first</div></div><div class="etch-pool" id="etchPool"></div>
         <div class="section-head" style="margin-top:24px"><div class="label">3 / Slot</div><div class="note">Filled slots are shown for comparison and protection</div></div><div class="etch-slots" id="etchSlots"></div>
-        <div class="actions"><span class="meta" id="etchStatus">Choose an item, modifier, and slot.</span><div><button class="button" id="etchStart" type="button" disabled>Start rolling</button> <button class="button" id="etchStop" type="button">Stop</button></div></div><pre class="etch-log" id="etchLog" tabindex="0">Etching helper waiting.</pre>
+        <div class="actions"><span class="meta" id="etchStatus">Choose an item, modifier, and slot.</span><div><button class="button" id="etchStart" type="button" disabled>Start rolling</button> <button class="button" id="etchStop" type="button">Stop</button></div></div><label class="etch-skill-stop"><input id="etchStopOnSkill" type="checkbox"> Stop on any skill roll</label><pre class="etch-log" id="etchLog" tabindex="0">Etching helper waiting.</pre>
       </section>
     </div>
     <div id="turboPanel" class="tab-panel">
@@ -216,9 +216,10 @@
         ? leveling.logs.map((entry) => `${new Date(entry.at).toLocaleTimeString()} | ${entry.message}`).join("\n")
         : "High-rarity leveling console waiting.";
     }
-    function renderSyslog(entries, activeInputs) {
-      const active = activeInputs?.length ? activeInputs.join(", ") : "No active input process";
-      $("activeInputs").textContent = active;
+    function renderSyslog(entries, activeInputs, queuedInputs) {
+      const active = activeInputs?.length ? `Active: ${activeInputs.join(", ")}` : "No active input process";
+      const queued = queuedInputs?.length ? ` · Queued: ${queuedInputs.join(", ")}` : "";
+      $("activeInputs").textContent = active + queued;
       $("syslog").textContent = entries?.length
         ? entries.map((entry) => `${new Date(entry.at).toLocaleTimeString()} | ${entry.process} | ${entry.action} | ${entry.status}${entry.blockers?.length ? ` | blocked by ${entry.blockers.join(", ")}` : ""}${entry.error ? ` | ${entry.error}` : ""}${entry.trace?.length ? `\n    trace: ${entry.trace.map((step) => `${step.phase}${step.monsterId ? `(${step.monsterId})` : ""}`).join(" > ")}` : ""}`).join("\n")
         : "Input syslog waiting.";
@@ -280,7 +281,8 @@
       start.disabled = startConditions.length > 0;
       start.title = startConditions.length ? `Cannot start: ${startConditions.join(", ")}` : "Start etching rolls";
       $("etchStatus").textContent = etchingData.error ? `Error: ${etchingData.error}` : etchingData.running ? `Rolling ${etchingData.attempts} times...` : startConditions.length ? `Cannot start: ${startConditions.join(", ")}` : item ? `${itemName(item)} · ${etchingTarget ? englishName(etchingTarget) : "choose modifier"} · ${etchingSlot === null ? "choose slot" : `slot ${etchingSlot + 1}`}` : "Choose an item, modifier, and slot.";
-      $("etchLog").textContent = etchingData.last ? `Attempts: ${etchingData.attempts}\nAction: ${etchingData.last.action ?? "unknown"}\n${etchingData.last.error ? `Action error: ${etchingData.last.error}` : etchingData.last.matches ? `Found ${englishName(etchingData.last.after?.stat ?? etchingData.last.after?.skill)}` : `Last roll: ${englishName(etchingData.last.after?.stat ?? etchingData.last.after?.skill ?? "unknown")}`}` : etchingData.running ? `Rolling ${etchingData.attempts} times...` : startConditions.length ? `Waiting: ${startConditions.join(", ")}` : "Etching helper waiting.";
+      $("etchStopOnSkill").checked = etchingData.stopOnSkill === true;
+      $("etchLog").textContent = etchingData.last ? `Attempts: ${etchingData.attempts}\nAction: ${etchingData.last.action ?? "unknown"}\n${etchingData.last.error ? `Action error: ${etchingData.last.error}` : etchingData.last.matches ? `Found ${etchingData.last.after?.skill ? `skill ${englishName(etchingData.last.after.skill)}` : englishName(etchingData.last.after?.stat)}` : `Last roll: ${englishName(etchingData.last.after?.stat ?? etchingData.last.after?.skill ?? "unknown")}`}` : etchingData.running ? `Rolling ${etchingData.attempts} times...` : startConditions.length ? `Waiting: ${startConditions.join(", ")}` : "Etching helper waiting.";
     }
     async function loadEtching() { if (etchingRefreshBusy) return; etchingRefreshBusy = true; try { const response = await fetch(`/api/etching?t=${Date.now()}`, { cache: "no-store" }); const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "Etching inventory unavailable"); etchingData = data; const quality = $("etchQuality"); if (quality.options.length === 1) quality.innerHTML += Object.entries(etchingData.meta.rarities).filter(([, meta]) => meta.stars >= 4).map(([id]) => `<option value="${id}">${englishName(id)}</option>`).join(""); renderEtching(); } finally { etchingRefreshBusy = false; } }
     function renderEggChart(drops, sessionDrops) {
@@ -398,7 +400,7 @@
         renderUltraAutomation(data.ultraAutomation);
         renderUltraLeveling(data.ultraLeveling);
         renderCrafting(data.crafting);
-        renderSyslog(data.syslog, data.activeInputs);
+        renderSyslog(data.syslog, data.activeInputs, data.queuedInputs);
         if (etchingData?.running || etchingPollingUntil > Date.now()) loadEtching().catch(() => {});
         $("turboPulse").classList.toggle("turbo-active", data.turbo === true);
         $("turboPulse").textContent = data.turbo === true ? "Turbo running" : "Start Turbo";
@@ -664,7 +666,7 @@
       if (item.enhances[etchingSlot] && !window.confirm("This will overwrite the current modifier in the selected slot. Continue?")) return;
       console.info("[Etching] Start requested", { itemId: etchingItemId, slotIdx: etchingSlot, target: etchingTarget });
       try {
-        const response = await fetch("/api/etching", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ itemId: etchingItemId, slotIdx: etchingSlot, target: etchingTarget }) });
+        const response = await fetch("/api/etching", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ itemId: etchingItemId, slotIdx: etchingSlot, target: etchingTarget, stopOnSkill: $("etchStopOnSkill").checked }) });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error ?? "Unable to start etching");
         console.info("[Etching] Start accepted", data);
