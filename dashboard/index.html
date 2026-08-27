@@ -123,6 +123,27 @@
     const capLabels = { gold: ["Gold bonus", "%"], exp: ["Experience bonus", "%"], attackSpeed: ["Attack speed", "%"], critRate: ["Critical rate", "%"], critDamage: ["Critical damage", "x"], cdr: ["Cooldown reduction", "%"], defenseCut: ["Damage reduction", "%"], bossDamage: ["Boss damage", "%"], lifesteal: ["Lifesteal", "%"] };
     const capValue = (value, unit) => unit === "x" ? `${number(value, 2)}x` : `${number(value * 100, 2)}%`;
     const $ = (id) => document.getElementById(id);
+    class PendingControl {
+      constructor(element, { onChange, onError } = {}) {
+        this.element = element;
+        this.pending = false;
+        this.onChange = onChange;
+        this.onError = onError;
+        element.addEventListener("change", async () => {
+          this.pending = true;
+          try { await this.onChange?.(this.value, this); } catch (error) { this.rollback(); this.onError?.(error); }
+        });
+      }
+      get value() { return this.element.type === "checkbox" ? this.element.checked : this.element.value; }
+      set value(value) { if (this.element.type === "checkbox") this.element.checked = value === true; else this.element.value = value; }
+      sync(value) { if (!this.pending) this.value = value; }
+      commit(value = this.value) { this.pending = false; this.value = value; }
+      rollback(value = this.value) { this.pending = false; this.value = value; }
+    }
+    const etchStopOnSkillControl = new PendingControl($("etchStopOnSkill"));
+    const ultraOpenControl = new PendingControl($("autoOpenUltra"));
+    const ultraCondenseControl = new PendingControl($("autoCondenseUltra"));
+    const ultraLevelControl = new PendingControl($("autoLevelUltra"));
     const eggRarities = [
       ["common", "Common", "#d7d7d0"], ["rare", "Rare", "#69b8ff"], ["ultra", "Ultra", "#c995ff"], ["legend", "Legend", "#ffc05a"],
       ["immortal", "Immortal", "#ff8f73"], ["arcana", "Arcana", "#ee78bd"], ["beyond", "Beyond", "#78e4d3"], ["century", "Century", "#a6d7ff"],
@@ -141,13 +162,15 @@
       let data;
       try { data = body ? JSON.parse(body) : {}; } catch { throw new Error(`Ultra automation API unavailable (HTTP ${response.status})`); }
       if (!response.ok) throw new Error(data.error ?? `Unable to update ultra automation (HTTP ${response.status})`);
+      ultraOpenControl.commit(data.open === true);
+      ultraCondenseControl.commit(data.condense === true);
       renderUltraAutomation(data);
     }
     function renderUltraAutomation(automation) {
       if (!automation) return;
-      $("autoOpenUltra").checked = automation.open === true;
+      ultraOpenControl.sync(automation.open === true);
       $("autoOpenRarity").value = automation.openRarity ?? "ultra";
-      $("autoCondenseUltra").checked = automation.condense === true;
+      ultraCondenseControl.sync(automation.condense === true);
       const last = automation.last;
       const openRarity = $("autoOpenRarity").selectedOptions[0]?.textContent ?? "Ultra";
       const result = last && !last.error ? `Last run: opened ${last.opened ?? 0} (up to ${openRarity}), combined ${last.condensed ?? 0}; protected Aw VI: ${last.protectedAwakeningSix ?? 0}` : "";
@@ -205,7 +228,7 @@
     }
     function renderUltraLeveling(leveling) {
       if (!leveling) return;
-      $("autoLevelUltra").checked = leveling.enabled === true;
+      ultraLevelControl.sync(leveling.enabled === true);
       const last = leveling.last;
       const diagnostic = last?.debug;
       const diagnosticText = diagnostic ? ` · tab ${diagnostic.activeTab ?? "?"} · swaps ${diagnostic.swapCount ?? 0} · target ${diagnostic.target?.id ?? "none"}` : "";
@@ -281,7 +304,7 @@
       start.disabled = startConditions.length > 0;
       start.title = startConditions.length ? `Cannot start: ${startConditions.join(", ")}` : "Start etching rolls";
       $("etchStatus").textContent = etchingData.error ? `Error: ${etchingData.error}` : etchingData.running ? `Rolling ${etchingData.attempts} times...` : startConditions.length ? `Cannot start: ${startConditions.join(", ")}` : item ? `${itemName(item)} · ${etchingTarget ? englishName(etchingTarget) : "choose modifier"} · ${etchingSlot === null ? "choose slot" : `slot ${etchingSlot + 1}`}` : "Choose an item, modifier, and slot.";
-      $("etchStopOnSkill").checked = etchingData.stopOnSkill === true;
+      etchStopOnSkillControl.sync(etchingData.stopOnSkill === true);
       $("etchLog").textContent = etchingData.last ? `Attempts: ${etchingData.attempts}\nAction: ${etchingData.last.action ?? "unknown"}\n${etchingData.last.error ? `Action error: ${etchingData.last.error}` : etchingData.last.matches ? `Found ${etchingData.last.after?.skill ? `skill ${englishName(etchingData.last.after.skill)}` : englishName(etchingData.last.after?.stat)}` : `Last roll: ${englishName(etchingData.last.after?.stat ?? etchingData.last.after?.skill ?? "unknown")}`}` : etchingData.running ? `Rolling ${etchingData.attempts} times...` : startConditions.length ? `Waiting: ${startConditions.join(", ")}` : "Etching helper waiting.";
     }
     async function loadEtching() { if (etchingRefreshBusy) return; etchingRefreshBusy = true; try { const response = await fetch(`/api/etching?t=${Date.now()}`, { cache: "no-store" }); const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "Etching inventory unavailable"); etchingData = data; const quality = $("etchQuality"); if (quality.options.length === 1) quality.innerHTML += Object.entries(etchingData.meta.rarities).filter(([, meta]) => meta.stars >= 4).map(([id]) => `<option value="${id}">${englishName(id)}</option>`).join(""); renderEtching(); } finally { etchingRefreshBusy = false; } }
@@ -631,16 +654,17 @@
     $("awakeningDo").addEventListener("click", async () => { const chosen = target(); const foodIds = [...awakeningFoods]; if (!chosen || !foodIds.length) return; if (!window.confirm(`Awaken ${chosen.name} using ${foodIds.length} copies? The selected monsters will be consumed; equipment returns to inventory.`)) return; const button = $("awakeningDo"); button.disabled = true; try { const response = await fetch("/api/awaken", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ targetId: chosen.id, foodIds }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error ?? data.result?.error ?? "Awakening failed"); $("awakeningResult").textContent = data.result.success ? `Success: ${chosen.name} reached awakening ${data.result.newLevel}.` : `Ritual completed; no tier gained (${data.result.sacrificed} consumed).`; await loadAwakenings(); } catch (error) { $("awakeningResult").textContent = error.message; $("awakeningResult").classList.add("error"); button.disabled = false; } });
     $("awakeningRefresh").addEventListener("click", loadAwakenings);
     loadAwakenings();
-    $("autoOpenUltra").addEventListener("change", () => updateUltraAutomation().catch((error) => { $("ultraAutomationStatus").textContent = `Error: ${error.message}`; }));
+    $("autoOpenUltra").addEventListener("change", () => updateUltraAutomation().catch((error) => { ultraOpenControl.rollback(); $("ultraAutomationStatus").textContent = `Error: ${error.message}`; }));
     $("autoOpenRarity").addEventListener("change", () => updateUltraAutomation().catch((error) => { $("ultraAutomationStatus").textContent = `Error: ${error.message}`; }));
-    $("autoCondenseUltra").addEventListener("change", () => updateUltraAutomation().catch((error) => { $("ultraAutomationStatus").textContent = `Error: ${error.message}`; }));
+    $("autoCondenseUltra").addEventListener("change", () => updateUltraAutomation().catch((error) => { ultraCondenseControl.rollback(); $("ultraAutomationStatus").textContent = `Error: ${error.message}`; }));
     $("autoLevelUltra").addEventListener("change", async () => {
       try {
         const response = await fetch("/api/ultra-leveling", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: $("autoLevelUltra").checked }) });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error ?? "Unable to update high-rarity leveling");
+        ultraLevelControl.commit(data.enabled === true);
         renderUltraLeveling(data);
-      } catch (error) { $("ultraLevelingStatus").textContent = `Error: ${error.message}`; }
+      } catch (error) { ultraLevelControl.rollback(); $("ultraLevelingStatus").textContent = `Error: ${error.message}`; }
     });
     $("etchQuality").addEventListener("change", renderEtching);
     $("etchLocation").addEventListener("change", renderEtching);
@@ -670,6 +694,7 @@
         const data = await response.json();
         if (!response.ok) throw new Error(data.error ?? "Unable to start etching");
         console.info("[Etching] Start accepted", data);
+        etchStopOnSkillControl.commit(etchStopOnSkillControl.value);
         etchingPollingUntil = Date.now() + 30000;
         etchingData = { ...etchingData, ...data };
         renderEtching();

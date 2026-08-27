@@ -579,6 +579,14 @@ function awakenUiExpression(targetId, foodIds) {
     const expeditionIds = new Set((state.expeditions ?? []).flatMap((group) => Array.isArray(group) ? group : (group.members ?? [])));
     if (foodIds.some((id) => state.monsters[id].fav || state.party.includes(id) || expeditionIds.has(id))) return { error: "Favorites, party members, and expedition monsters are protected" };
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const compoundWasOpen = visible(document.querySelector("#compound-panel"));
+    const boxWasOpen = visible(document.querySelector("#box-panel"));
+    const closeOpenedWindow = (id) => {
+      if ((id === "compound" && compoundWasOpen) || (id === "box" && boxWasOpen)) return;
+      debug.closeWindow?.(id, { force: true });
+      const panel = document.querySelector("#" + id + "-panel");
+      if (panel && !panel.classList.contains("hidden")) panel.querySelector(".win-close")?.click();
+    };
     const findCell = (id) => document.querySelector('.mon-cell[data-mon="' + CSS.escape(id) + '"]');
     const clickMonster = async (id) => {
       let cell = findCell(id);
@@ -594,43 +602,48 @@ function awakenUiExpression(targetId, foodIds) {
       }
       return false;
     };
-    let compoundPanel = document.querySelector("#compound-panel");
-    if (!visible(compoundPanel)) {
-      const tab = document.querySelector('.bar-tab[data-win="compound"]');
-      if (!tab) return { error: "Compound window unavailable" };
-      tab.click();
-      await wait(100);
+    try {
+      let compoundPanel = document.querySelector("#compound-panel");
+      if (!visible(compoundPanel)) {
+        const tab = document.querySelector('.bar-tab[data-win="compound"]');
+        if (!tab) return { error: "Compound window unavailable" };
+        tab.click();
+        await wait(100);
+        compoundPanel = document.querySelector("#compound-panel");
+      }
+      if (!visible(compoundPanel)) return { error: "Compound window did not open" };
+      const ritualTab = [...compoundPanel.querySelectorAll(".cmp-tab")]
+        .find((button) => /覚醒|Awaken/i.test(text(button)));
+      if (!ritualTab) return { error: "Awakening mode unavailable" };
+      ritualTab.click();
+      await wait(80);
+      if (!await clickMonster(targetId)) return { error: "Target monster is not visible in the box" };
+      for (const id of foodIds) {
+        if (!await clickMonster(id)) return { error: "A selected duplicate is not visible in the box" };
+      }
+      await wait(80);
       compoundPanel = document.querySelector("#compound-panel");
+      const ritualButton = [...compoundPanel.querySelectorAll("button.compound-do")]
+        .find((button) => /儀式を行う|Perform the rite/i.test(text(button)) && !button.disabled);
+      if (!ritualButton) return { error: "Awakening ritual button is unavailable" };
+      const before = state.monsters[targetId]?.awakening ?? 0;
+      ritualButton.click();
+      await wait(250);
+      const after = window.__battleDebug?.()?.state?.monsters?.[targetId]?.awakening ?? before;
+      const remainingSlots = [...document.querySelectorAll("#compound-panel .cmp-slot .cmp-x")];
+      for (const clearButton of remainingSlots) clearButton.click();
+      await wait(80);
+      return {
+        success: after > before,
+        before,
+        after,
+        consumed: foodIds.length,
+        selectionCleared: document.querySelectorAll("#compound-panel .cmp-slot").length === 0,
+      };
+    } finally {
+      closeOpenedWindow("compound");
+      closeOpenedWindow("box");
     }
-    if (!visible(compoundPanel)) return { error: "Compound window did not open" };
-    const ritualTab = [...compoundPanel.querySelectorAll(".cmp-tab")]
-      .find((button) => /覚醒|Awaken/i.test(text(button)));
-    if (!ritualTab) return { error: "Awakening mode unavailable" };
-    ritualTab.click();
-    await wait(80);
-    if (!await clickMonster(targetId)) return { error: "Target monster is not visible in the box" };
-    for (const id of foodIds) {
-      if (!await clickMonster(id)) return { error: "A selected duplicate is not visible in the box" };
-    }
-    await wait(80);
-    compoundPanel = document.querySelector("#compound-panel");
-    const ritualButton = [...compoundPanel.querySelectorAll("button.compound-do")]
-      .find((button) => /儀式を行う|Perform the rite/i.test(text(button)) && !button.disabled);
-    if (!ritualButton) return { error: "Awakening ritual button is unavailable" };
-    const before = state.monsters[targetId]?.awakening ?? 0;
-    ritualButton.click();
-    await wait(250);
-    const after = window.__battleDebug?.()?.state?.monsters?.[targetId]?.awakening ?? before;
-    const remainingSlots = [...document.querySelectorAll("#compound-panel .cmp-slot .cmp-x")];
-    for (const clearButton of remainingSlots) clearButton.click();
-    await wait(80);
-    return {
-      success: after > before,
-      before,
-      after,
-      consumed: foodIds.length,
-      selectionCleared: document.querySelectorAll("#compound-panel .cmp-slot").length === 0,
-    };
   })()`;
 }
 
@@ -784,7 +797,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
         ultraAutomation.busy = false;
       }
     });
-    if (!execution.accepted) ultraAutomation.lastError = `Input busy: ${execution.blockers.join(", ")}`;
+    if (!execution.accepted) ultraAutomation.lastError = `Input scheduling failed`;
   };
   const ultraAutomationTimer = setInterval(runUltraAutomation, 5_000);
   const ultraLeveling = { enabled: false, running: false, last: null, lastError: null, logs: [], levels: new Map(), restored: false };
@@ -822,10 +835,10 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
         ultraLeveling.running = false;
       }
     });
-    if (!execution.accepted) logUltraLeveling(`Input busy: ${execution.blockers.join(", ")}`);
+    if (!execution.accepted) logUltraLeveling("Input scheduling failed");
   };
   const ultraLevelingTimer = setInterval(runUltraLeveling, 5_000);
-  const etching = { running: false, stop: false, itemId: null, slotIdx: null, target: null, attempts: 0, last: null, error: null };
+  const etching = { running: false, stop: false, itemId: null, slotIdx: null, target: null, stopOnSkill: false, attempts: 0, last: null, error: null };
   const runEtching = async () => {
     if (etching.running) return;
     const execution = await inputServices.etching.run("roll-loop", async () => {
@@ -835,7 +848,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
       etching.error = null;
       try {
         while (!etching.stop && etching.attempts < 5000) {
-          const result = await evaluateRuntime(etchingRollExpression(etching.itemId, etching.slotIdx, etching.target), endpoint, { awaitPromise: true });
+          const result = await evaluateRuntime(etchingRollExpression(etching.itemId, etching.slotIdx, etching.target, etching.stopOnSkill), endpoint, { awaitPromise: true });
           etching.attempts += 1;
           etching.last = result;
           processLogger.write("etching", "roll-attempt", { status: result?.error ? "failed" : result?.matches ? "matched" : "completed", attempt: etching.attempts, action: result?.action ?? "unknown", error: result?.error ?? null, trace: result?.trace ?? null });
@@ -850,7 +863,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
         etching.running = false;
       }
     });
-    if (!execution.accepted) etching.error = `Input busy: ${execution.blockers.join(", ")}`;
+    if (!execution.accepted) etching.error = "Input scheduling failed";
   };
   const craftAutomation = {
     running: false,
@@ -895,6 +908,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
   });
   const stopCraftAutomation = () => {
     if (craftAutomation.controller) craftAutomation.controller.abort();
+    craftAutomation.running = false;
   };
   const startCraftAutomation = ({ mode, minAtkPct, minSkillPower, minHpPct, atkEnabled, skillEnabled, hpEnabled, useGotchaTokens, storeLockedItems, atkOperator, skillOperator, hpOperator }) => {
     if (craftAutomation.running) throw new Error("Craft automation is already running");
@@ -916,14 +930,14 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     craftAutomation.lastError = null;
     craftAutomation.logs = [];
     craftAutomation.controller = new AbortController();
-    inputServices.crafting.run("craft-loop", async () => {
-      craftAutomation.running = true;
-      return runCraftController({
+    const runCraftCycle = () => {
+      if (!craftAutomation.running || craftAutomation.controller?.signal.aborted) return;
+      inputServices.crafting.run("craft-cycle", async () => runCraftController({
         endpoint,
         mode,
         maxRuns: 1,
         confirm: true,
-        loop: true,
+        loop: false,
         minAtkPct,
         minSkillPower,
         minHpPct,
@@ -940,11 +954,10 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
           craftAutomation.logs.push({ at: Date.now(), message });
           craftAutomation.logs = craftAutomation.logs.slice(-60);
         },
-      });
-    }).then((execution) => {
+      })).then((execution) => {
       if (!execution.accepted) {
-        craftAutomation.lastError = `Input busy: ${execution.blockers.join(", ")}`;
-        craftAutomation.exitReason = "input-busy";
+        craftAutomation.lastError = "Input scheduling failed";
+        craftAutomation.exitReason = "input-scheduling-failed";
         return;
       }
       const result = execution.result;
@@ -956,9 +969,12 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
       craftAutomation.lastError = error.message;
       craftAutomation.exitReason = "error";
     }).finally(() => {
-      craftAutomation.running = false;
-      craftAutomation.controller = null;
+      if (craftAutomation.running && !craftAutomation.controller?.signal.aborted) setTimeout(runCraftCycle, 2_000);
+      else craftAutomation.controller = null;
     });
+    };
+    craftAutomation.running = true;
+    runCraftCycle();
   };
   const refreshTurboState = async () => {
     if (!turboEnabled) return;
@@ -1008,12 +1024,12 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     if (pathname === "/api/live") {
       await refreshTurboState();
       response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
-      response.end(JSON.stringify({ ...metrics.read(), turbo: turboEnabled, turboPhase, turboKeys, turboStack, turboLastAction, turboLog, ultraAutomation: { ...ultraAutomation }, ultraLeveling: { enabled: ultraLeveling.enabled, running: ultraLeveling.running, last: ultraLeveling.last, lastError: ultraLeveling.lastError, logs: ultraLeveling.logs }, crafting: craftStatus(), syslog: processLogger.read(), activeInputs: inputCoordinator.activeProcesses() }));
+      response.end(JSON.stringify({ ...metrics.read(), turbo: turboEnabled, turboPhase, turboKeys, turboStack, turboLastAction, turboLog, ultraAutomation: { ...ultraAutomation }, ultraLeveling: { enabled: ultraLeveling.enabled, running: ultraLeveling.running, last: ultraLeveling.last, lastError: ultraLeveling.lastError, logs: ultraLeveling.logs }, crafting: craftStatus(), syslog: processLogger.read(), activeInputs: inputCoordinator.activeProcesses(), queuedInputs: inputCoordinator.queuedProcesses() }));
       return;
     }
     if (pathname === "/api/syslog" && request.method === "GET") {
       response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
-      response.end(JSON.stringify({ entries: processLogger.read(), activeInputs: inputCoordinator.activeProcesses() }));
+      response.end(JSON.stringify({ entries: processLogger.read(), activeInputs: inputCoordinator.activeProcesses(), queuedInputs: inputCoordinator.queuedProcesses() }));
       return;
     }
     if (pathname === "/api/report") {
@@ -1043,7 +1059,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
           poolLabel: ENHANCE_PART_CAT_LABEL[enhancePartCat(item.part)] ?? enhancePartCat(item.part),
         }));
         response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
-        response.end(JSON.stringify({ ...snapshot, meta: etchingMeta, items, running: etching.running, attempts: etching.attempts, last: etching.last, error: etching.error }));
+        response.end(JSON.stringify({ ...snapshot, meta: etchingMeta, items, running: etching.running, attempts: etching.attempts, last: etching.last, error: etching.error, stopOnSkill: etching.stopOnSkill }));
       } catch (error) {
         response.writeHead(502, { "content-type": "application/json; charset=utf-8" });
         response.end(JSON.stringify({ error: error.message }));
@@ -1061,6 +1077,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
           etching.itemId = body.itemId;
           etching.slotIdx = body.slotIdx;
           etching.target = body.target;
+          etching.stopOnSkill = body.stopOnSkill === true;
           void runEtching();
         }
         response.writeHead(202, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
@@ -1318,6 +1335,15 @@ function ultraAutomationExpression({ open, openRarity, condense }) {
     const debug = window.__battleDebug?.();
     const state = debug?.state;
     if (!state) return { error: "TASMON debug object is unavailable", debug: { url: location.href } };
+    const visible = (node) => node && !node.classList.contains("hidden");
+    const compoundWasOpen = visible(document.querySelector("#compound-panel"));
+    const boxWasOpen = visible(document.querySelector("#box-panel"));
+    const closeOpenedWindow = (id) => {
+      if ((id === "compound" && compoundWasOpen) || (id === "box" && boxWasOpen)) return;
+      debug.closeWindow?.(id, { force: true });
+      const panel = document.querySelector("#" + id + "-panel");
+      if (panel && !panel.classList.contains("hidden")) panel.querySelector(".win-close")?.click();
+    };
     const result = { opened: 0, condensed: 0, protectedAwakeningSix: 0, skipped: [] };
     const speciesMeta = ${JSON.stringify(speciesMeta)};
     const rarityOrder = ${JSON.stringify(RARITY_ORDER)};
@@ -1368,7 +1394,8 @@ function ultraAutomationExpression({ open, openRarity, condense }) {
       else await openEggs();
     }
     if (${Boolean(condense)}) {
-      const groups = new Map();
+      try {
+        const groups = new Map();
       for (const monster of Object.values(state.monsters ?? {})) {
         const species = speciesMeta[monster.speciesId];
         if (!species || !["ultra", "legend"].includes(species.rarity)) continue;
@@ -1409,7 +1436,7 @@ function ultraAutomationExpression({ open, openRarity, condense }) {
           clearButton = document.querySelector("#compound-panel .cmp-slot:not(.cmp-empty) .cmp-x");
         }
       };
-      for (const monsters of groups.values()) {
+        for (const monsters of groups.values()) {
         const speciesId = monsters[0]?.speciesId;
         const party = new Set(state.party ?? []);
         const expedition = new Set((state.expeditions ?? []).flatMap((group) => Array.isArray(group) ? group : (group.members ?? [])));
@@ -1456,6 +1483,10 @@ function ultraAutomationExpression({ open, openRarity, condense }) {
           else result.skipped.push("Ritual did not consume pair for " + target.speciesId);
           await clearRitualTarget();
         }
+        }
+      } finally {
+        closeOpenedWindow("compound");
+        closeOpenedWindow("box");
       }
     }
     return result;
@@ -1646,7 +1677,7 @@ function etchingSnapshotExpression() {
   })()`;
 }
 
-function etchingRollExpression(itemId, slotIdx, target) {
+function etchingRollExpression(itemId, slotIdx, target, stopOnSkill = false) {
   return `(async () => {
     const debug = window.__battleDebug?.();
     const trace = [];
@@ -1662,7 +1693,7 @@ function etchingRollExpression(itemId, slotIdx, target) {
       const result = debug.enhanceRollSlot(state, ${JSON.stringify(itemId)}, ${Number(slotIdx)});
       if (result.error) return { error: result.error, before, action: "debug", trace };
       const after = result.after ?? null;
-      const matches = ${JSON.stringify(target)} === (after?.stat ?? after?.skill);
+      const matches = ${Boolean(stopOnSkill)} && Boolean(after?.skill) || ${JSON.stringify(target)} === (after?.stat ?? after?.skill);
       return { ok: true, cost: result.cost, before, after, matches, action: "debug", trace };
     }
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1689,7 +1720,7 @@ function etchingRollExpression(itemId, slotIdx, target) {
       for (let attempt = 0; attempt < 20; attempt += 1) {
         const current = [...(state.items ?? []), ...(state.storage ?? []), ...Object.values(state.monsters ?? {}).flatMap((monster) => monster.equipment ?? [])].find((entry) => entry.id === ${JSON.stringify(itemId)})?.enhances?.[${Number(slotIdx)}] ?? null;
         if (current && JSON.stringify(current) !== JSON.stringify(before)) {
-          return { ok: true, cost: null, before, after: current, matches: ${JSON.stringify(target)} === (current.stat ?? current.skill), action: "ui", trace };
+          return { ok: true, cost: null, before, after: current, matches: ${Boolean(stopOnSkill)} && Boolean(current.skill) || ${JSON.stringify(target)} === (current.stat ?? current.skill), action: "ui", trace };
         }
         await sleep(50);
       }
@@ -1814,7 +1845,7 @@ function etchingRollExpression(itemId, slotIdx, target) {
     for (let attempt = 0; attempt < 20; attempt += 1) {
       const current = [...(state.items ?? []), ...(state.storage ?? []), ...Object.values(state.monsters ?? {}).flatMap((monster) => monster.equipment ?? [])].find((entry) => entry.id === ${JSON.stringify(itemId)})?.enhances?.[${Number(slotIdx)}] ?? null;
       if (current && JSON.stringify(current) !== JSON.stringify(before)) {
-        return { ok: true, cost: null, before, after: current, matches: ${JSON.stringify(target)} === (current.stat ?? current.skill), action: "ui", trace };
+        return { ok: true, cost: null, before, after: current, matches: ${Boolean(stopOnSkill)} && Boolean(current.skill) || ${JSON.stringify(target)} === (current.stat ?? current.skill), action: "ui", trace };
       }
       await sleep(50);
     }

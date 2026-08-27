@@ -32,31 +32,57 @@ export class InputCoordinator {
   constructor(logger) {
     this.logger = logger;
     this.active = new Map();
+    this.queue = [];
+    this.jobs = new Map();
   }
 
   activeProcesses() {
     return [...this.active.keys()];
   }
 
-  async run(process, action, operation) {
-    const blockers = this.activeProcesses();
-    if (blockers.length > 0) {
-      this.logger.write(process, action, { status: "blocked", blockers });
-      return { accepted: false, reason: "input-busy", blockers };
-    }
+  queuedProcesses() {
+    return this.queue.map(({ process }) => process);
+  }
 
+  async run(process, action, operation) {
+    const key = `${process}:${action}`;
+    const existing = this.jobs.get(key);
+    if (existing) return existing.promise;
+
+    const queued = this.active.size > 0 || this.queue.length > 0;
+    let resolveJob;
+    let rejectJob;
+    const promise = new Promise((resolve, reject) => {
+      resolveJob = resolve;
+      rejectJob = reject;
+    });
+    const job = { process, action, operation, resolve: resolveJob, reject: rejectJob, promise };
+    this.jobs.set(key, job);
+    this.queue.push(job);
+    if (queued) this.logger.write(process, action, { status: "queued", ahead: this.queue.length - 1, active: this.activeProcesses() });
+    this.#drain();
+    return promise;
+  }
+
+  async #drain() {
+    if (this.active.size > 0) return;
+    const job = this.queue.shift();
+    if (!job) return;
+    const { process, action, operation, resolve, reject } = job;
     const startedAt = this.logger.clock();
     this.active.set(process, { action, startedAt });
     this.logger.write(process, action, { status: "started" });
     try {
       const result = await operation();
       this.logger.write(process, action, { status: "completed", durationMs: Math.max(0, this.logger.clock() - startedAt) });
-      return { accepted: true, result };
+      resolve({ accepted: true, result });
     } catch (error) {
       this.logger.write(process, action, { status: "failed", durationMs: Math.max(0, this.logger.clock() - startedAt), error: error.message });
-      throw error;
+      reject(error);
     } finally {
       this.active.delete(process);
+      this.jobs.delete(`${process}:${action}`);
+      this.#drain();
     }
   }
 }

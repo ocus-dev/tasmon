@@ -243,24 +243,57 @@ const CRAFT_MAINTENANCE = (useGotchaTokens, storeLockedItems) => `(async () => {
   if (!state) return { ok: false, used: 0, stored: 0, reason: "battle-state-unavailable" };
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const withWindow = debug.windowManager?.withWindow?.bind(debug.windowManager);
+  const trace = [];
+  const readWindows = () => debug.windowState?.() ?? {
+    openOrder: ["box", "compound", "items", "inv"].filter((id) => {
+      const panel = document.querySelector("#" + id + "-panel");
+      return panel && !panel.classList.contains("hidden");
+    }),
+    visible: ["box", "compound", "items", "inv"].filter((id) => {
+      const panel = document.querySelector("#" + id + "-panel");
+      return panel && !panel.classList.contains("hidden");
+    }),
+    leases: null,
+    bridge: false,
+  };
+  const mark = (phase, extra = {}) => trace.push({ phase, ...extra, windows: readWindows() });
+  const closeMaintenanceWindow = (id) => {
+    debug.closeWindow?.(id, { force: true });
+    const panel = document.querySelector("#" + id + "-panel");
+    if (panel && !panel.classList.contains("hidden")) {
+      const closeButton = panel.querySelector(".win-close");
+      closeButton?.click();
+    }
+    return !document.querySelector("#" + id + "-panel:not(.hidden)");
+  };
   let used = 0;
   let stored = 0;
   let reason = null;
+  mark("maintenance-start", { useGotchaTokens: ${useGotchaTokens}, storeLockedItems: ${storeLockedItems} });
   if (${useGotchaTokens}) {
     const spendTokens = async () => {
+      mark("gotcha-enter");
       const compoundTab = document.querySelector('.bar-tab[data-win="compound"]');
-      if (!compoundTab) return { reason: "compound-tab-not-found" };
+      if (!compoundTab) {
+        mark("gotcha-compound-tab-missing");
+        return { reason: "compound-tab-not-found" };
+      }
       compoundTab.click();
+      mark("gotcha-compound-clicked");
       await sleep(100);
       const gachaTab = [...document.querySelectorAll("#compound-body .cmp-tab")]
         .find((button) => button.textContent.includes("ガチャ") || button.textContent.includes("Gacha"));
-      if (!gachaTab) return { reason: "gacha-tab-not-found" };
+      if (!gachaTab) {
+        mark("gotcha-tab-missing");
+        return { reason: "gacha-tab-not-found" };
+      }
       for (const [coinId, count] of Object.entries(state.storageCoins ?? {})) {
         if (count <= 0) continue;
         state.coins[coinId] = (state.coins[coinId] ?? 0) + count;
         state.storageCoins[coinId] = 0;
       }
       gachaTab.click();
+      mark("gotcha-tab-clicked");
       await sleep(100);
       for (let rowIndex = 0; rowIndex < document.querySelectorAll("#compound-body .gacha-row").length; rowIndex += 1) {
         for (;;) {
@@ -268,23 +301,35 @@ const CRAFT_MAINTENANCE = (useGotchaTokens, storeLockedItems) => `(async () => {
           const owned = Number(row?.querySelector(".gacha-cost")?.textContent?.match(/(\\d+)/)?.[1] ?? 0);
           if (owned <= 0) break;
           const slot = row?.querySelector(".coin-slot");
-          if (!slot) { reason = "gacha-slot-not-found"; break; }
+          if (!slot) { reason = "gacha-slot-not-found"; mark("gotcha-slot-missing", { rowIndex }); break; }
           slot.click();
           await sleep(40);
           const pull = row.querySelector(".gacha-pull");
-          if (!pull || pull.disabled) { reason = "gacha-pull-unavailable"; break; }
+          if (!pull || pull.disabled) { reason = "gacha-pull-unavailable"; mark("gotcha-pull-unavailable", { rowIndex }); break; }
           pull.click();
           await sleep(100);
           used += 1;
+          mark("gotcha-pull-completed", { rowIndex, used });
         }
         if (reason) break;
       }
+      mark("gotcha-exit", { used, reason });
       return { reason };
     };
-    const tokenResult = withWindow
-      ? await withWindow("box", () => withWindow("compound", spendTokens, "craft-token-spending"), "craft-token-spending")
-      : await spendTokens();
-    reason = tokenResult?.reason ?? reason;
+    mark("gotcha-before-lease");
+    try {
+      const tokenResult = withWindow
+        ? await withWindow("box", () => withWindow("compound", spendTokens, "craft-token-spending"), "craft-token-spending")
+        : await spendTokens();
+      mark("gotcha-after-lease", { tokenResult });
+      reason = tokenResult?.reason ?? reason;
+    } finally {
+      mark("gotcha-before-fallback-close");
+      for (const id of ["compound", "box", "inv", "items"]) {
+        mark("close-attempt", { id, closed: closeMaintenanceWindow(id) });
+      }
+      mark("gotcha-after-fallback-close");
+    }
   }
   if (${storeLockedItems}) {
     const storeItems = async () => {
@@ -299,15 +344,21 @@ const CRAFT_MAINTENANCE = (useGotchaTokens, storeLockedItems) => `(async () => {
         stored += 1;
       }
     };
+    mark("locked-items-before-mutation", { itemCount: state.items?.length ?? 0, storageCount: state.storage?.length ?? 0 });
     try {
       await storeItems();
     } finally {
-      debug.closeWindow?.("items", { force: true });
+      mark("locked-items-before-close", { stored });
+      for (const id of ["inv", "items"]) {
+        mark("close-attempt", { id, closed: closeMaintenanceWindow(id) });
+      }
+      mark("locked-items-after-close", { stored });
     }
   }
   localStorage.setItem("taskbar-idle-rpg-save", JSON.stringify(state));
   debug.renderHud?.();
-  return { ok: !reason, used, stored, reason };
+  mark("maintenance-complete", { used, stored, reason });
+  return { ok: !reason, used, stored, reason, trace };
 })()`;
 
 export async function runCraftController({ endpoint = DEFAULT_ENDPOINT, maxRuns = 1, mode = "gear", confirm = false, loop = false, minAtkPct = DEFAULT_MIN_ATK_PCT, minSkillPower = DEFAULT_MIN_SKILL_POWER, minHpPct = DEFAULT_MIN_HP_PCT, atkEnabled = true, skillEnabled = true, hpEnabled = false, atkOperator = DEFAULT_ATK_OPERATOR, skillOperator = DEFAULT_SKILL_OPERATOR, hpOperator = DEFAULT_HP_OPERATOR, useGotchaTokens = false, storeLockedItems = false, log = console.log, signal } = {}) {
@@ -414,6 +465,7 @@ export async function runCraftController({ endpoint = DEFAULT_ENDPOINT, maxRuns 
     if (checkGotchaTokens) lastGotchaTokenCheckAt = Date.now();
     if (checkGotchaTokens || storeLockedItems) {
       const maintenance = await gameAction(CRAFT_MAINTENANCE(checkGotchaTokens, storeLockedItems), endpoint);
+      for (const event of maintenance?.trace ?? []) log(`Craft maintenance ${JSON.stringify(event)}`);
       if (maintenance?.used) log(`Used ${maintenance.used} gotcha token${maintenance.used === 1 ? "" : "s"}`);
       if (maintenance?.stored) log(`Moved ${maintenance.stored} locked item${maintenance.stored === 1 ? "" : "s"} to storage`);
       if (!maintenance?.ok && maintenance?.reason) log(`Craft maintenance stopped: ${maintenance.reason}`);

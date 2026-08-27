@@ -15681,7 +15681,13 @@ const windowManager = (() => {
       lease.release();
     }
   };
-  return { acquire, withWindow };
+  const snapshot = () => [...leases.entries()].map(([id, entry]) => ({
+    id,
+    owner: entry.owner,
+    opened: entry.opened,
+    refs: entry.refs,
+  }));
+  return { acquire, withWindow, snapshot };
 })();
 
 function toggleWindow(id) {
@@ -16757,6 +16763,11 @@ window.__battleDebug = () => ({
   renderHud, // ライブ参照(HUD・宝箱チップの再描画。テスト検証用)
   closeWindow, // ライブ参照(自動化後にアイテム窓を閉じる)
   windowManager, // ライブ参照(自動化の一時窓をスコープ管理)
+  windowState: () => ({
+    openOrder: [...openOrder],
+    visible: Object.entries(windows).filter(([, el]) => !el.classList.contains("hidden")).map(([id]) => id),
+    leases: windowManager.snapshot(),
+  }),
   scene, // ライブ参照(戦闘演出の実機検査用: verify-battle-flash)
   openChestOfKind, // ライブ参照(宝箱一括開封のテスト用)
   enemyGroup: [...enemyGroup],
