@@ -783,14 +783,17 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
   let turboStack = 0;
   let turboLastAction = null;
   let turboLog = [];
-  const ultraAutomation = { open: false, openRarity: "ultra", condense: false, busy: false, last: null, lastError: null };
+  const ultraAutomation = { open: false, openRarity: "ultra", condense: false, condenseMaxAwakening: 6, tidyZeroAwakeningRarity: "off", busy: false, last: null, lastError: null };
   const runUltraAutomation = async () => {
-    if (ultraAutomation.busy || (!ultraAutomation.open && !ultraAutomation.condense)) return;
+    if (ultraAutomation.busy || (!ultraAutomation.open && !ultraAutomation.condense && ultraAutomation.tidyZeroAwakeningRarity === "off")) return;
     const execution = await inputServices.ultraAutomation.run("automation-cycle", async () => {
       ultraAutomation.busy = true;
       try {
         ultraAutomation.last = await evaluateRuntime(ultraAutomationExpression(ultraAutomation), endpoint, { awaitPromise: true });
         ultraAutomation.lastError = ultraAutomation.last?.error ?? null;
+        if (!ultraAutomation.lastError && ultraAutomation.tidyZeroAwakeningRarity !== "off") {
+          console.log(`[ultra-tidy] rarity=${ultraAutomation.tidyZeroAwakeningRarity} candidates=${ultraAutomation.last?.tidyCandidates ?? 0} eligible=${ultraAutomation.last?.tidyEligible ?? 0} condensed=${ultraAutomation.last?.tidyCondensed ?? 0} skipped=${ultraAutomation.last?.tidySkipped ?? 0}`);
+        }
       } catch (error) {
         ultraAutomation.lastError = error.message;
       } finally {
@@ -1239,6 +1242,8 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
         ultraAutomation.open = body.open === true;
         ultraAutomation.openRarity = RARITY_ORDER.includes(body.openRarity) && RARITY_ORDER.indexOf(body.openRarity) >= RARITY_ORDER.indexOf("ultra") ? body.openRarity : "ultra";
         ultraAutomation.condense = body.condense === true;
+        ultraAutomation.condenseMaxAwakening = Number.isInteger(body.condenseMaxAwakening) ? Math.max(1, Math.min(6, body.condenseMaxAwakening)) : 6;
+        ultraAutomation.tidyZeroAwakeningRarity = body.tidyZeroAwakeningRarity === "off" || RARITY_ORDER.includes(body.tidyZeroAwakeningRarity) ? body.tidyZeroAwakeningRarity : "off";
         await runUltraAutomation();
         response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         response.end(JSON.stringify({ ...ultraAutomation }));
@@ -1328,7 +1333,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
   return server;
 }
 
-function ultraAutomationExpression({ open, openRarity, condense }) {
+function ultraAutomationExpression({ open, openRarity, condense, condenseMaxAwakening = 6, tidyZeroAwakeningRarity = "off" }) {
   const speciesMeta = Object.fromEntries(Object.entries(SPECIES).map(([id, species]) => [id, { rarity: species.rarity }]));
   return `(async () => {
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1344,11 +1349,13 @@ function ultraAutomationExpression({ open, openRarity, condense }) {
       const panel = document.querySelector("#" + id + "-panel");
       if (panel && !panel.classList.contains("hidden")) panel.querySelector(".win-close")?.click();
     };
-    const result = { opened: 0, condensed: 0, protectedAwakeningSix: 0, skipped: [] };
+    const result = { opened: 0, condensed: 0, protectedAwakeningSix: 0, tidyCandidates: 0, tidyEligible: 0, tidyCondensed: 0, tidySkipped: 0, skipped: [] };
     const speciesMeta = ${JSON.stringify(speciesMeta)};
     const rarityOrder = ${JSON.stringify(RARITY_ORDER)};
     const openRarity = ${JSON.stringify(RARITY_ORDER.includes(openRarity) && RARITY_ORDER.indexOf(openRarity) >= RARITY_ORDER.indexOf("ultra") ? openRarity : "ultra")};
     const openRarityRank = rarityOrder.indexOf(openRarity);
+    const condenseMaxAwakening = ${Math.max(1, Math.min(6, Number(condenseMaxAwakening) || 6))};
+    const tidyZeroAwakeningRarity = ${JSON.stringify(tidyZeroAwakeningRarity)};
     const openableEggIndexes = () => (state.eggs ?? []).map((egg, index) => ({ egg, index })).filter(({ egg }) => {
       const eggRank = rarityOrder.indexOf(egg.rarity);
       return eggRank >= rarityOrder.indexOf("ultra") && eggRank <= openRarityRank;
@@ -1393,12 +1400,12 @@ function ultraAutomationExpression({ open, openRarity, condense }) {
       if (withWindow) await withWindow("eggs", openEggs, "ultra-egg-opening");
       else await openEggs();
     }
-    if (${Boolean(condense)}) {
+    if (${Boolean(condense || tidyZeroAwakeningRarity !== "off")}) {
       try {
         const groups = new Map();
       for (const monster of Object.values(state.monsters ?? {})) {
         const species = speciesMeta[monster.speciesId];
-        if (!species || !["ultra", "legend"].includes(species.rarity)) continue;
+        if (!species || (!["ultra", "legend"].includes(species.rarity) && species.rarity !== tidyZeroAwakeningRarity)) continue;
         const list = groups.get(monster.speciesId) ?? [];
         list.push(monster);
         groups.set(monster.speciesId, list);
@@ -1440,7 +1447,16 @@ function ultraAutomationExpression({ open, openRarity, condense }) {
         const speciesId = monsters[0]?.speciesId;
         const party = new Set(state.party ?? []);
         const expedition = new Set((state.expeditions ?? []).flatMap((group) => Array.isArray(group) ? group : (group.members ?? [])));
-        const isEligible = (monster) => (monster.awakening ?? 0) < 6 && !monster.fav && !party.has(monster.id) && !expedition.has(monster.id);
+        const isTidyGroup = speciesMeta[speciesId]?.rarity === tidyZeroAwakeningRarity;
+        if (isTidyGroup) {
+          result.tidyCandidates += monsters.length;
+          result.tidyEligible += monsters.filter((monster) => (monster.awakening ?? 0) === 0 && !monster.fav && !party.has(monster.id) && !expedition.has(monster.id)).length;
+        }
+        const isEligible = (monster) => {
+          const awakening = monster.awakening ?? 0;
+          if (isTidyGroup && awakening !== 0) return false;
+          return awakening < condenseMaxAwakening && !monster.fav && !party.has(monster.id) && !expedition.has(monster.id);
+        };
         const protectedCount = monsters.filter((monster) => (monster.awakening ?? 0) >= 6).length;
         result.protectedAwakeningSix += protectedCount;
         for (;;) {
@@ -1479,8 +1495,13 @@ function ultraAutomationExpression({ open, openRarity, condense }) {
           if (!ritualButton) { result.skipped.push("Ritual button unavailable for " + target.speciesId); continue; }
           ritualButton.click();
           for (let attempt = 0; attempt < 80 && Object.keys(state.monsters).length >= beforeCount; attempt += 1) await sleep(100);
-          if (Object.keys(state.monsters).length < beforeCount) result.condensed += 1;
-          else result.skipped.push("Ritual did not consume pair for " + target.speciesId);
+          if (Object.keys(state.monsters).length < beforeCount) {
+            result.condensed += 1;
+            if (isTidyGroup) result.tidyCondensed += 1;
+          } else {
+            result.skipped.push("Ritual did not consume pair for " + target.speciesId);
+            if (isTidyGroup) result.tidySkipped += 1;
+          }
           await clearRitualTarget();
         }
         }
