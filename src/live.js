@@ -1405,7 +1405,7 @@ function ultraAutomationExpression({ open, openRarity, condense, condenseMaxAwak
         const groups = new Map();
       for (const monster of Object.values(state.monsters ?? {})) {
         const species = speciesMeta[monster.speciesId];
-        if (!species || (!["ultra", "legend"].includes(species.rarity) && species.rarity !== tidyZeroAwakeningRarity)) continue;
+        if (!species || (!["ultra", "legend", "immortal"].includes(species.rarity) && species.rarity !== tidyZeroAwakeningRarity)) continue;
         const list = groups.get(monster.speciesId) ?? [];
         list.push(monster);
         groups.set(monster.speciesId, list);
