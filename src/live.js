@@ -26,6 +26,7 @@ const STAGES_PER_DIFFICULTY = 10;
 const KPM_HISTORY_LIMIT = 3601;
 const RARE_CHOICE_BASE = 0.08;
 const RARE_CHOICE_PER_STAR = 0.012;
+const ULTRA_AUTOMATION_TIMEOUT_MS = 20_000;
 
 const etchingMeta = {
   rarities: Object.fromEntries(Object.entries(RARITY_META).map(([id, meta]) => [id, { label: meta.label, stars: meta.stars, color: meta.color }])),
@@ -789,20 +790,21 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     const execution = await inputServices.ultraAutomation.run("automation-cycle", async () => {
       ultraAutomation.busy = true;
       try {
-        ultraAutomation.last = await evaluateRuntime(ultraAutomationExpression(ultraAutomation), endpoint, { awaitPromise: true });
+        ultraAutomation.last = await evaluateRuntime(ultraAutomationExpression(ultraAutomation, ULTRA_AUTOMATION_TIMEOUT_MS), endpoint, { awaitPromise: true });
         ultraAutomation.lastError = ultraAutomation.last?.error ?? null;
         if (!ultraAutomation.lastError && ultraAutomation.tidyZeroAwakeningRarity !== "off") {
           console.log(`[ultra-tidy] rarity=${ultraAutomation.tidyZeroAwakeningRarity} candidates=${ultraAutomation.last?.tidyCandidates ?? 0} eligible=${ultraAutomation.last?.tidyEligible ?? 0} condensed=${ultraAutomation.last?.tidyCondensed ?? 0} skipped=${ultraAutomation.last?.tidySkipped ?? 0}`);
         }
       } catch (error) {
         ultraAutomation.lastError = error.message;
+        if (error.message === "Ultra automation timed out") console.warn(`[ultra-automation] timed out after ${ULTRA_AUTOMATION_TIMEOUT_MS}ms; releasing input lease for retry`);
       } finally {
         ultraAutomation.busy = false;
       }
     });
     if (!execution.accepted) ultraAutomation.lastError = `Input scheduling failed`;
   };
-  const ultraAutomationTimer = setInterval(runUltraAutomation, 5_000);
+  const ultraAutomationTimer = setInterval(runUltraAutomation, 15_000);
   const ultraLeveling = { enabled: false, running: false, last: null, lastError: null, logs: [], levels: new Map(), restored: false };
   const logUltraLeveling = (message, detail = null) => {
     ultraLeveling.logs.push({ at: Date.now(), message, detail });
@@ -1333,10 +1335,12 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
   return server;
 }
 
-function ultraAutomationExpression({ open, openRarity, condense, condenseMaxAwakening = 6, tidyZeroAwakeningRarity = "off" }) {
+function ultraAutomationExpression({ open, openRarity, condense, condenseMaxAwakening = 6, tidyZeroAwakeningRarity = "off" }, timeoutMs = ULTRA_AUTOMATION_TIMEOUT_MS) {
   const speciesMeta = Object.fromEntries(Object.entries(SPECIES).map(([id, species]) => [id, { rarity: species.rarity }]));
   return `(async () => {
-    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const deadline = Date.now() + ${Math.max(1_000, Number(timeoutMs) || ULTRA_AUTOMATION_TIMEOUT_MS)};
+    const ensureTime = () => { if (Date.now() >= deadline) throw new Error("Ultra automation timed out"); };
+    const sleep = async (ms) => { ensureTime(); await new Promise((resolve) => setTimeout(resolve, ms)); ensureTime(); };
     const debug = window.__battleDebug?.();
     const state = debug?.state;
     if (!state) return { error: "TASMON debug object is unavailable", debug: { url: location.href } };
@@ -1395,13 +1399,13 @@ function ultraAutomationExpression({ open, openRarity, condense, condenseMaxAwak
         } else result.skipped.push("Hatch did not complete: " + egg.id);
       }
     };
-    if (${Boolean(open)}) {
-      const withWindow = debug.windowManager?.withWindow?.bind(debug.windowManager);
-      if (withWindow) await withWindow("eggs", openEggs, "ultra-egg-opening");
-      else await openEggs();
-    }
-    if (${Boolean(condense || tidyZeroAwakeningRarity !== "off")}) {
-      try {
+    try {
+      if (${Boolean(open)}) {
+        const withWindow = debug.windowManager?.withWindow?.bind(debug.windowManager);
+        if (withWindow) await withWindow("eggs", openEggs, "ultra-egg-opening");
+        else await openEggs();
+      }
+      if (${Boolean(condense || tidyZeroAwakeningRarity !== "off")}) {
         const groups = new Map();
       for (const monster of Object.values(state.monsters ?? {})) {
         const species = speciesMeta[monster.speciesId];
@@ -1505,10 +1509,10 @@ function ultraAutomationExpression({ open, openRarity, condense, condenseMaxAwak
           await clearRitualTarget();
         }
         }
-      } finally {
-        closeOpenedWindow("compound");
-        closeOpenedWindow("box");
       }
+    } finally {
+      closeOpenedWindow("compound");
+      closeOpenedWindow("box");
     }
     return result;
   })()`;
