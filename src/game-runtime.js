@@ -6,6 +6,8 @@ import { openArchive } from "./asar.js";
 const RUNTIME_FILES = [
   "/src/game/content-pack.js",
   "/src/game/data.js",
+  "/src/game/newchars.js",
+  "/src/game/difficulty-tiers.js",
   "/src/game/endgame.js",
   "/src/game/extra-difficulty.js",
   "/src/game/rng.js",

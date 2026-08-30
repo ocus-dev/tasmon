@@ -101,7 +101,7 @@
     <div id="turboPanel" class="tab-panel">
       <section class="section"><div class="section-head"><div class="label">Turbo reproduction</div><div class="note">Each pulse adds one timer layer</div></div>
         <p class="awaken-note">Turbo rotates through 10-7 → 10-10 boss, 10-8 → 10-10 boss, and 10-9 → 10-10 boss. It selects 10-9 normally without the lap button, then uses the boss lap on 10-10. Each pulse adds one extra deferred wave callback layer.</p>
-        <div class="actions"><div class="meta"><span id="turboPhase">Phase --</span><span id="turboStack">Layers --</span><span id="turboKeys">Keys --</span><label class="turbo-target-control">Target KPM <input id="turboTargetKpm" type="number" min="1" step="1" value="1000" inputmode="numeric"></label></div><div><button class="button turbo" id="turboPulse" type="button">Start Turbo</button> <button class="button" id="turboStop" type="button">Stop</button></div></div>
+        <div class="actions"><div class="meta"><span id="turboPhase">Phase --</span><span id="turboStack">Layers --</span><span id="turboKeys">Keys --</span><label class="turbo-target-control">Target KPM <input id="turboTargetKpm" type="number" min="1" step="1" value="1000" inputmode="numeric"></label><label><input id="turboExperimental" type="checkbox"> Experimental</label><label><input id="turboVerbose" type="checkbox"> Verbose</label></div><div><button class="button turbo" id="turboPulse" type="button">Start Turbo</button> <button class="button" id="turboStop" type="button">Stop</button> <button class="button" id="turboExperimentReset" type="button">Restart game for experiment</button></div></div>
         <pre class="turbo-console" id="turboConsole" tabindex="0">Turbo console waiting.</pre>
       </section>
     </div>
@@ -432,13 +432,20 @@
         renderCrafting(data.crafting);
         renderSyslog(data.syslog, data.activeInputs, data.queuedInputs);
         if (etchingData?.running || etchingPollingUntil > Date.now()) loadEtching().catch(() => {});
+        if (data.turbo !== true && turboController) {
+          clearInterval(turboController);
+          turboController = null;
+          turboPulseBusy = false;
+        }
         $("turboPulse").classList.toggle("turbo-active", data.turbo === true);
         $("turboPulse").textContent = data.turbo === true ? "Turbo running" : "Start Turbo";
+        $("turboExperimental").checked = data.turboExperimental === true;
+        $("turboVerbose").checked = data.turboVerbose === true;
         $("turboPhase").textContent = `Phase ${data.turboPhase ?? "idle"}`;
         $("turboStack").textContent = `Layers ${data.turboStack ?? 0}`;
         $("turboKeys").textContent = `Keys ${data.turboKeys ?? 0}/9`;
         $("turboConsole").textContent = (data.turboLog ?? []).length
-          ? data.turboLog.map((entry) => `${new Date(entry.at).toLocaleTimeString()} | layer ${entry.stack} | ${entry.action}${entry.phase ? ` | ${entry.phase} | keys ${entry.keyCount} | target ${entry.target}` : ""}`).join("\n")
+          ? data.turboLog.map((entry) => `${new Date(entry.at).toLocaleTimeString()} | layer ${entry.stack} | ${entry.action}${entry.phase ? ` | ${entry.phase} | keys ${entry.keyCount} | target ${entry.target}` : ""}${entry.telemetry ? ` | ${JSON.stringify(entry.telemetry)}${entry.liveEnemies != null ? ` | liveEnemies ${entry.liveEnemies}` : ""}` : ""}`).join("\n")
           : "Turbo console waiting.";
         $("status").classList.toggle("offline", !data.connected);
         $("status").innerHTML = `<span class="status-dot"></span><small>${data.connected ? "LIVE / READ-ONLY" : "OFFLINE"}</small>`;
@@ -748,6 +755,24 @@
       await fetch("/api/turbo/stop", { method: "POST" });
       refresh();
     });
+    $("turboExperimentReset").addEventListener("click", async () => {
+      if (turboController) clearInterval(turboController);
+      turboController = null;
+      const response = await fetch("/api/turbo/experiment/reset", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? `Unable to restart game (HTTP ${response.status})`);
+      $("turboConsole").textContent = "Experiment reset; game reloading...";
+    });
+    async function updateTurboExperimental() {
+      const response = await fetch("/api/turbo/experimental", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: $("turboExperimental").checked, verbose: $("turboVerbose").checked }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? `Unable to update turbo experimental mode (HTTP ${response.status})`);
+      $("turboExperimental").checked = data.experimental === true;
+      $("turboVerbose").checked = data.verbose === true;
+      refresh();
+    }
+    $("turboExperimental").addEventListener("change", () => updateTurboExperimental().catch((error) => { $("turboExperimental").checked = !$("turboExperimental").checked; $("turboConsole").textContent += `\nError: ${error.message}`; }));
+    $("turboVerbose").addEventListener("change", () => updateTurboExperimental().catch((error) => { $("turboVerbose").checked = !$("turboVerbose").checked; $("turboConsole").textContent += `\nError: ${error.message}`; }));
     refresh(); setInterval(refresh, 1000);
   </script>
 </body>

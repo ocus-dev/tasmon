@@ -648,7 +648,7 @@ function awakenUiExpression(targetId, foodIds) {
   })()`;
 }
 
-async function setTurboRespawn(enabled, endpoint) {
+async function setTurboRespawn(enabled, endpoint, experimental = false, verbose = false) {
   return evaluateRuntime(`(() => {
     const debug = window.__battleDebug?.();
     const existing = window.__turboRespawn;
@@ -657,7 +657,8 @@ async function setTurboRespawn(enabled, endpoint) {
         existing.restore();
         return false;
       }
-      if (existing.version === 7 && existing.enabled && typeof existing.pulse === "function") {
+      if (existing.version === 8 && existing.enabled && typeof existing.pulse === "function") {
+        existing.setExperimental?.(${Boolean(experimental)}, ${Boolean(verbose)});
         return existing.pulse();
       }
       existing.restore();
@@ -665,7 +666,7 @@ async function setTurboRespawn(enabled, endpoint) {
     if (!${enabled}) return false;
     const original = window.setTimeout;
     const turbo = {
-      version: 7,
+      version: 8,
       enabled: true,
       stack: 0,
       phase: "idle",
@@ -673,6 +674,25 @@ async function setTurboRespawn(enabled, endpoint) {
       stageIndex: 0,
       lastAction: "installed",
       log: [],
+      experimental: false,
+      verbose: false,
+      telemetry: {
+        callbacks450Scheduled: 0,
+        callbacks450Duplicated: 0,
+        callbacks450Executed: 0,
+        callbacks450WithLiveWave: 0,
+        callbacks450WithEmptyWave: 0,
+        killsAtPulse: 0,
+        stageAtPulse: null,
+        playerHpAtPulse: null,
+        baselineKills: 0,
+        killsSinceStart: 0,
+      },
+      setExperimental(experimental, verbose) {
+        turbo.experimental = Boolean(experimental);
+        turbo.verbose = turbo.experimental && Boolean(verbose);
+        return { experimental: turbo.experimental, verbose: turbo.verbose, telemetry: { ...turbo.telemetry } };
+      },
       restore() {
         if (window.setTimeout === turbo.wrapper) window.setTimeout = original;
         turbo.enabled = false;
@@ -729,16 +749,40 @@ async function setTurboRespawn(enabled, endpoint) {
         const stageAction = turbo.stageNode(target);
         const loopAction = target === "[10-9]" ? "skipped-lap" : turbo.loopNode(target);
         turbo.write(stageAction + "/" + loopAction, { phase: turbo.phase, keyCount: keys, target, layers: turbo.stack });
-        return { enabled: true, phase: turbo.phase, keyCount: turbo.keyCount, stack: turbo.stack, lastAction: turbo.lastAction, log: turbo.log };
+        if (turbo.experimental) {
+          const current = window.__battleDebug?.();
+          const enemyGroup = current?.enemyGroup ?? [];
+          turbo.telemetry.killsAtPulse = current?.totalKills ?? turbo.telemetry.killsAtPulse;
+          turbo.telemetry.killsSinceStart = Math.max(0, turbo.telemetry.killsAtPulse - turbo.telemetry.baselineKills);
+          turbo.telemetry.stageAtPulse = current?.stage ?? null;
+          turbo.telemetry.playerHpAtPulse = current?.playerHp ?? null;
+          if (turbo.verbose) turbo.write("experimental-snapshot", { telemetry: { ...turbo.telemetry }, liveEnemies: enemyGroup.filter((hp) => hp > 0).length });
+        }
+        return { enabled: true, phase: turbo.phase, keyCount: turbo.keyCount, stack: turbo.stack, lastAction: turbo.lastAction, log: turbo.log, experimental: turbo.experimental, verbose: turbo.verbose, telemetry: { ...turbo.telemetry } };
       },
     };
     turbo.wrapper = function (callback, delay, ...args) {
-      const timer = original.call(this, callback, delay, ...args);
+      const trackedCallback = turbo.experimental && delay === 450 ? function (...callbackArgs) {
+        turbo.telemetry.callbacks450Executed += 1;
+        const current = window.__battleDebug?.();
+        const enemyGroup = current?.enemyGroup ?? [];
+        if (enemyGroup.some((hp) => hp > 0)) turbo.telemetry.callbacks450WithLiveWave += 1;
+        else turbo.telemetry.callbacks450WithEmptyWave += 1;
+        return callback.apply(this, callbackArgs);
+      } : callback;
+      if (turbo.experimental && delay === 450) turbo.telemetry.callbacks450Scheduled += 1;
+      const timer = original.call(this, trackedCallback, delay, ...args);
       if (delay === 450 && turbo.enabled) {
-        for (let duplicate = 0; duplicate < turbo.stack; duplicate++) original.call(this, callback, delay, ...args);
+        for (let duplicate = 0; duplicate < turbo.stack; duplicate++) {
+          if (turbo.experimental) turbo.telemetry.callbacks450Duplicated += 1;
+          original.call(this, trackedCallback, delay, ...args);
+        }
       }
       return timer;
     };
+    turbo.experimental = ${Boolean(experimental)};
+    turbo.verbose = turbo.experimental && ${Boolean(verbose)};
+    turbo.telemetry.baselineKills = debug?.totalKills ?? debug?.state?.totalKills ?? 0;
     window.__turboRespawn = turbo;
     window.setTimeout = turbo.wrapper;
     return turbo.pulse();
@@ -784,6 +828,10 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
   let turboStack = 0;
   let turboLastAction = null;
   let turboLog = [];
+  let turboExperimental = false;
+  let turboVerbose = false;
+  let turboTelemetry = null;
+  let turboResetBarrier = false;
   const ultraAutomation = { open: false, openRarity: "ultra", condense: false, condenseMaxAwakening: 6, tidyZeroAwakeningRarity: "off", busy: false, last: null, lastError: null };
   const runUltraAutomation = async () => {
     if (ultraAutomation.busy || (!ultraAutomation.open && !ultraAutomation.condense && ultraAutomation.tidyZeroAwakeningRarity === "off")) return;
@@ -990,10 +1038,13 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
           const turbo = window.__turboRespawn;
           return turbo ? {
             enabled: turbo.enabled,
+            experimental: turbo.experimental,
+            verbose: turbo.verbose,
             stack: turbo.stack,
             phase: turbo.phase,
             lastAction: turbo.lastAction,
             log: turbo.log,
+            telemetry: turbo.telemetry,
           } : null;
         })()`, endpoint),
       ]);
@@ -1003,6 +1054,9 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
       turboStack = runtime.stack ?? turboStack;
       turboLastAction = runtime.lastAction ?? turboLastAction;
       turboLog = runtime.log ?? turboLog;
+      turboExperimental = runtime.experimental === true;
+      turboVerbose = runtime.verbose === true;
+      turboTelemetry = runtime.telemetry ?? turboTelemetry;
     } catch {
       // The regular live poll will report a disconnected game separately.
     }
@@ -1029,7 +1083,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     if (pathname === "/api/live") {
       await refreshTurboState();
       response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
-      response.end(JSON.stringify({ ...metrics.read(), turbo: turboEnabled, turboPhase, turboKeys, turboStack, turboLastAction, turboLog, ultraAutomation: { ...ultraAutomation }, ultraLeveling: { enabled: ultraLeveling.enabled, running: ultraLeveling.running, last: ultraLeveling.last, lastError: ultraLeveling.lastError, logs: ultraLeveling.logs }, crafting: craftStatus(), syslog: processLogger.read(), activeInputs: inputCoordinator.activeProcesses(), queuedInputs: inputCoordinator.queuedProcesses() }));
+      response.end(JSON.stringify({ ...metrics.read(), turbo: turboEnabled, turboExperimental, turboVerbose, turboPhase, turboKeys, turboStack, turboLastAction, turboLog, turboTelemetry, ultraAutomation: { ...ultraAutomation }, ultraLeveling: { enabled: ultraLeveling.enabled, running: ultraLeveling.running, last: ultraLeveling.last, lastError: ultraLeveling.lastError, logs: ultraLeveling.logs }, crafting: craftStatus(), syslog: processLogger.read(), activeInputs: inputCoordinator.activeProcesses(), queuedInputs: inputCoordinator.queuedProcesses() }));
       return;
     }
     if (pathname === "/api/syslog" && request.method === "GET") {
@@ -1257,7 +1311,12 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     }
     if (pathname === "/api/turbo" && request.method === "POST") {
       try {
-        const execution = await inputServices.turbo.run("activate", () => setTurboRespawn(true, endpoint));
+        if (turboResetBarrier) {
+          response.writeHead(409, { "content-type": "application/json; charset=utf-8" });
+          response.end(JSON.stringify({ error: "experiment-reset-required-setup" }));
+          return;
+        }
+        const execution = await inputServices.turbo.run("activate", () => setTurboRespawn(true, endpoint, turboExperimental, turboVerbose));
         if (!execution.accepted) {
           response.writeHead(409, { "content-type": "application/json; charset=utf-8" });
           response.end(JSON.stringify({ error: "input-busy", blockers: execution.blockers }));
@@ -1275,11 +1334,34 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
         turboRefreshTimer = setInterval(refreshTurboState, 250);
         await refreshTurboState();
         response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
-        response.end(JSON.stringify({ turbo: turboEnabled, phase: turboPhase, keyCount: turboKeys, stack: turboStack, lastAction: turboLastAction, log: turboLog }));
+        response.end(JSON.stringify({ turbo: turboEnabled, experimental: turboExperimental, verbose: turboVerbose, phase: turboPhase, keyCount: turboKeys, stack: turboStack, lastAction: turboLastAction, log: turboLog, telemetry: turboTelemetry }));
       } catch (error) {
         turboEnabled = false;
         response.writeHead(502, { "content-type": "application/json; charset=utf-8" });
         response.end(JSON.stringify({ error: error.message, turbo: false }));
+      }
+      return;
+    }
+    if (pathname === "/api/turbo/experimental" && request.method === "POST") {
+      try {
+        const body = await readRequestBody(request);
+        turboExperimental = body.enabled === true;
+        turboVerbose = turboExperimental && body.verbose === true;
+        if (turboExperimental) turboResetBarrier = false;
+        if (turboEnabled) {
+          const execution = await inputServices.turbo.run("experimental", () => setTurboExperimental(turboExperimental, turboVerbose, endpoint));
+          if (!execution.accepted) {
+            response.writeHead(409, { "content-type": "application/json; charset=utf-8" });
+            response.end(JSON.stringify({ error: "input-busy", blockers: execution.blockers }));
+            return;
+          }
+        }
+        await refreshTurboState();
+        response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        response.end(JSON.stringify({ experimental: turboExperimental, verbose: turboVerbose, turbo: turboEnabled, telemetry: turboTelemetry }));
+      } catch (error) {
+        response.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ error: error.message }));
       }
       return;
     }
@@ -1302,6 +1384,32 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
       } catch (error) {
         response.writeHead(502, { "content-type": "application/json; charset=utf-8" });
         response.end(JSON.stringify({ error: error.message, turbo: turboEnabled }));
+      }
+      return;
+    }
+    if (pathname === "/api/turbo/experiment/reset" && request.method === "POST") {
+      try {
+        const execution = await inputServices.turbo.run("experiment-reset", () => setTurboRespawn(false, endpoint));
+        if (!execution.accepted) {
+          response.writeHead(409, { "content-type": "application/json; charset=utf-8" });
+          response.end(JSON.stringify({ error: "input-busy", blockers: execution.blockers }));
+          return;
+        }
+        turboEnabled = false;
+        turboPhase = null;
+        turboKeys = 0;
+        turboStack = 0;
+        turboLastAction = "experiment-reset";
+        turboLog = [];
+        turboTelemetry = null;
+        turboResetBarrier = true;
+        metrics.reset();
+        await evaluateRuntime("(() => { window.setTimeout(() => location.reload(), 0); return true; })()", endpoint);
+        response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        response.end(JSON.stringify({ reset: true, reloading: true }));
+      } catch (error) {
+        response.writeHead(502, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ error: error.message, reset: false }));
       }
       return;
     }
@@ -1876,4 +1984,12 @@ function etchingRollExpression(itemId, slotIdx, target, stopOnSkill = false) {
     }
     return { error: "Visible etching roll did not update the item", before, trace };
   })()`;
+}
+
+async function setTurboExperimental(enabled, verbose, endpoint) {
+  return evaluateRuntime(`(() => {
+    const turbo = window.__turboRespawn;
+    if (!turbo?.enabled || typeof turbo.setExperimental !== "function") return { experimental: false, verbose: false, telemetry: null };
+    return turbo.setExperimental(${Boolean(enabled)}, ${Boolean(verbose)});
+  })()`, endpoint);
 }
