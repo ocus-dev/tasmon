@@ -921,6 +921,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
   const craftAutomation = {
     running: false,
     mode: "both",
+    levelBand: "auto",
     minAtkPct: 0.9,
     minSkillPower: 0.4,
     minHpPct: 0.9,
@@ -942,6 +943,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
   const craftStatus = () => ({
     running: craftAutomation.running,
     mode: craftAutomation.mode,
+    levelBand: craftAutomation.levelBand,
     minAtkPct: craftAutomation.minAtkPct,
     minSkillPower: craftAutomation.minSkillPower,
     minHpPct: craftAutomation.minHpPct,
@@ -963,9 +965,10 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     if (craftAutomation.controller) craftAutomation.controller.abort();
     craftAutomation.running = false;
   };
-  const startCraftAutomation = ({ mode, minAtkPct, minSkillPower, minHpPct, atkEnabled, skillEnabled, hpEnabled, useGotchaTokens, storeLockedItems, atkOperator, skillOperator, hpOperator }) => {
+  const startCraftAutomation = ({ mode, levelBand, minAtkPct, minSkillPower, minHpPct, atkEnabled, skillEnabled, hpEnabled, useGotchaTokens, storeLockedItems, atkOperator, skillOperator, hpOperator }) => {
     if (craftAutomation.running) throw new Error("Craft automation is already running");
     craftAutomation.mode = mode;
+    craftAutomation.levelBand = levelBand;
     craftAutomation.minAtkPct = minAtkPct;
     craftAutomation.minSkillPower = minSkillPower;
     craftAutomation.minHpPct = minHpPct;
@@ -988,6 +991,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
       inputServices.crafting.run("craft-cycle", async () => runCraftController({
         endpoint,
         mode,
+        levelBand,
         maxRuns: 1,
         confirm: true,
         loop: false,
@@ -1169,6 +1173,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
         const body = await readRequestBody(request);
         if (body.confirm !== true) throw new Error("Craft automation requires explicit confirmation");
         const mode = body.mode ?? "gear";
+        const levelBand = body.levelBand ?? "auto";
         const minAtkPct = Number(body.minAtkPct ?? 0.9);
         const minSkillPower = Number(body.minSkillPower ?? 0.4);
         const minHpPct = Number(body.minHpPct ?? 0.9);
@@ -1179,10 +1184,11 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
         const skillOperator = body.skillOperator === "OR" ? "OR" : "AND";
         const hpOperator = body.hpOperator === "OR" ? "OR" : "AND";
         if (!new Set(["gear", "charm", "both"]).has(mode)) throw new Error("Mode must be gear, charm, or both");
+        if (levelBand !== "auto" && (!Number.isInteger(Number(levelBand)) || Number(levelBand) < 0 || Number(levelBand) > 9)) throw new Error("Level band must be auto or a valid level band index");
         if (!Number.isFinite(minAtkPct) || minAtkPct < 0 || !Number.isFinite(minSkillPower) || minSkillPower < 0 || !Number.isFinite(minHpPct) || minHpPct < 0) throw new Error("Thresholds must be non-negative numbers");
         const useGotchaTokens = body.useGotchaTokens === true;
         const storeLockedItems = body.storeLockedItems === true;
-        startCraftAutomation({ mode, minAtkPct, minSkillPower, minHpPct, atkEnabled, skillEnabled, hpEnabled, useGotchaTokens, storeLockedItems, atkOperator, skillOperator, hpOperator });
+        startCraftAutomation({ mode, levelBand, minAtkPct, minSkillPower, minHpPct, atkEnabled, skillEnabled, hpEnabled, useGotchaTokens, storeLockedItems, atkOperator, skillOperator, hpOperator });
         response.writeHead(202, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         response.end(JSON.stringify(craftStatus()));
       } catch (error) {
@@ -1196,6 +1202,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
         if (craftAutomation.running) throw new Error("Stop craft automation before changing settings");
         const body = await readRequestBody(request);
         const mode = body.mode ?? craftAutomation.mode;
+        const levelBand = body.levelBand ?? craftAutomation.levelBand;
         const minAtkPct = Number(body.minAtkPct ?? craftAutomation.minAtkPct);
         const minSkillPower = Number(body.minSkillPower ?? craftAutomation.minSkillPower);
         const minHpPct = Number(body.minHpPct ?? craftAutomation.minHpPct);
@@ -1208,8 +1215,9 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
         const skillOperator = body.skillOperator === "OR" ? "OR" : "AND";
         const hpOperator = body.hpOperator === "OR" ? "OR" : "AND";
         if (!new Set(["gear", "charm", "both"]).has(mode)) throw new Error("Mode must be gear, charm, or both");
+        if (levelBand !== "auto" && (!Number.isInteger(Number(levelBand)) || Number(levelBand) < 0 || Number(levelBand) > 9)) throw new Error("Level band must be auto or a valid level band index");
         if (!Number.isFinite(minAtkPct) || minAtkPct < 0 || !Number.isFinite(minSkillPower) || minSkillPower < 0 || !Number.isFinite(minHpPct) || minHpPct < 0) throw new Error("Thresholds must be non-negative numbers");
-        Object.assign(craftAutomation, { mode, minAtkPct, minSkillPower, minHpPct, atkEnabled, skillEnabled, hpEnabled, useGotchaTokens, storeLockedItems, atkOperator, skillOperator, hpOperator });
+        Object.assign(craftAutomation, { mode, levelBand, minAtkPct, minSkillPower, hpEnabled, atkEnabled, skillEnabled, useGotchaTokens, storeLockedItems, atkOperator, skillOperator, hpOperator });
         response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         response.end(JSON.stringify(craftStatus()));
       } catch (error) {

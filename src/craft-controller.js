@@ -13,6 +13,19 @@ const DEFAULT_MIN_HP_PCT = 0;
 const DEFAULT_ATK_OPERATOR = "AND";
 const DEFAULT_SKILL_OPERATOR = "AND";
 const DEFAULT_HP_OPERATOR = "AND";
+const DEFAULT_LEVEL_BAND = "auto";
+export const CRAFT_BANDS = Object.freeze([
+  { min: 1, max: 10 },
+  { min: 10, max: 20 },
+  { min: 15, max: 30 },
+  { min: 20, max: 40 },
+  { min: 30, max: 50 },
+  { min: 40, max: 65 },
+  { min: 65, max: 80 },
+  { min: 80, max: 100 },
+  { min: 100, max: 115 },
+  { min: 115, max: 125 },
+]);
 const RETRYABLE_UI_REASONS = new Set([
   "compound-tab-not-found",
   "craft-window-not-visible",
@@ -58,20 +71,11 @@ const SNAPSHOT_WITH_STORAGE = SNAPSHOT.replace(
 );
 
 function bandOf(level) {
-  const bands = [
-    { min: 1, max: 10 },
-    { min: 10, max: 20 },
-    { min: 15, max: 30 },
-    { min: 20, max: 40 },
-    { min: 30, max: 50 },
-    { min: 40, max: 65 },
-    { min: 65, max: 80 },
-  ];
   const itemLevel = Math.max(1, Math.round(level ?? 1));
-  for (let index = bands.length - 1; index >= 0; index -= 1) {
-    if (itemLevel >= bands[index].min && itemLevel <= bands[index].max) return index;
+  for (let index = CRAFT_BANDS.length - 1; index >= 0; index -= 1) {
+    if (itemLevel >= CRAFT_BANDS[index].min && itemLevel <= CRAFT_BANDS[index].max) return index;
   }
-  return itemLevel > 80 ? bands.length - 1 : 0;
+  return itemLevel > CRAFT_BANDS.at(-1).max ? CRAFT_BANDS.length - 1 : 0;
 }
 
 export function craftableGroupCount(snapshot, mode = "gear", thresholds = {}) {
@@ -84,6 +88,7 @@ export function craftableGroupCount(snapshot, mode = "gear", thresholds = {}) {
   const atkOperator = thresholds.atkOperator === "OR" ? "OR" : DEFAULT_ATK_OPERATOR;
   const skillOperator = thresholds.skillOperator === "OR" ? "OR" : DEFAULT_SKILL_OPERATOR;
   const hpOperator = thresholds.hpOperator === "OR" ? "OR" : DEFAULT_HP_OPERATOR;
+  const levelBand = thresholds.levelBand === undefined || thresholds.levelBand === "auto" ? null : Number(thresholds.levelBand);
   const equipped = new Set(snapshot.equipped ?? []);
   const groups = new Map();
   for (const item of [...(snapshot.items ?? []), ...(snapshot.storage ?? [])]) {
@@ -102,8 +107,10 @@ export function craftableGroupCount(snapshot, mode = "gear", thresholds = {}) {
     );
     if (itemMode === "gear" && protectedItem) continue;
     if (item.locked || equipped.has(item.id)) continue;
-    const key = `${itemMode}|${item.rarity}|${bandOf(item.lv)}`;
-    groups.set(key, { mode: itemMode, rarity: item.rarity, band: bandOf(item.lv), count: (groups.get(key)?.count ?? 0) + 1 });
+    const band = bandOf(item.lv);
+    if (levelBand !== null && band !== levelBand) continue;
+    const key = `${itemMode}|${item.rarity}|${band}`;
+    groups.set(key, { mode: itemMode, rarity: item.rarity, band, count: (groups.get(key)?.count ?? 0) + 1 });
   }
   return [...groups.entries()]
     .map(([key, group]) => ({ key, ...group, batches: Math.floor(group.count / CRAFT_COST) }))
@@ -361,10 +368,11 @@ const CRAFT_MAINTENANCE = (useGotchaTokens, storeLockedItems) => `(async () => {
   return { ok: !reason, used, stored, reason, trace };
 })()`;
 
-export async function runCraftController({ endpoint = DEFAULT_ENDPOINT, maxRuns = 1, mode = "gear", confirm = false, loop = false, minAtkPct = DEFAULT_MIN_ATK_PCT, minSkillPower = DEFAULT_MIN_SKILL_POWER, minHpPct = DEFAULT_MIN_HP_PCT, atkEnabled = true, skillEnabled = true, hpEnabled = false, atkOperator = DEFAULT_ATK_OPERATOR, skillOperator = DEFAULT_SKILL_OPERATOR, hpOperator = DEFAULT_HP_OPERATOR, useGotchaTokens = false, storeLockedItems = false, log = console.log, signal } = {}) {
+export async function runCraftController({ endpoint = DEFAULT_ENDPOINT, maxRuns = 1, mode = "gear", levelBand = DEFAULT_LEVEL_BAND, confirm = false, loop = false, minAtkPct = DEFAULT_MIN_ATK_PCT, minSkillPower = DEFAULT_MIN_SKILL_POWER, minHpPct = DEFAULT_MIN_HP_PCT, atkEnabled = true, skillEnabled = true, hpEnabled = false, atkOperator = DEFAULT_ATK_OPERATOR, skillOperator = DEFAULT_SKILL_OPERATOR, hpOperator = DEFAULT_HP_OPERATOR, useGotchaTokens = false, storeLockedItems = false, log = console.log, signal } = {}) {
   if (!confirm) throw new Error("Craft automation changes game state; rerun with --confirm to enable it");
   if (!Number.isInteger(maxRuns) || maxRuns < 1) throw new Error("maxRuns must be a positive integer");
   if (!new Set(["gear", "charm", "both"]).has(mode)) throw new Error("mode must be gear, charm, or both");
+  if (levelBand !== DEFAULT_LEVEL_BAND && (!Number.isInteger(Number(levelBand)) || Number(levelBand) < 0 || Number(levelBand) >= CRAFT_BANDS.length)) throw new Error("levelBand must be auto or a valid craft band index");
 
   const results = [];
   let exitReason = loop ? "stopped-by-user" : "max-runs-reached";
@@ -387,7 +395,7 @@ export async function runCraftController({ endpoint = DEFAULT_ENDPOINT, maxRuns 
       if (chests.opened > 0) log(`Opened ${chests.opened} pending chests`);
     }
     let before = await evaluateRuntime(SNAPSHOT, endpoint);
-    const thresholds = { minAtkPct, minSkillPower, minHpPct, atkEnabled, skillEnabled, hpEnabled, atkOperator, skillOperator, hpOperator };
+    const thresholds = { minAtkPct, minSkillPower, minHpPct, atkEnabled, skillEnabled, hpEnabled, atkOperator, skillOperator, hpOperator, levelBand };
     let groups = craftableGroupCount(before, mode, thresholds);
     let group = selectCraftGroup(groups, mode, preferredMode);
     let includeStorage = false;

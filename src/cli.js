@@ -28,7 +28,7 @@ Usage:
   npm start -- render-report <save-json-path> [output-path]
   npm start -- live [port] [cdp-port] [--host <address>] [--lan]
   npm start -- turbo [endpoint]
-  npm start -- craft [max-runs] [cdp-port] [gear|charm|both] --confirm [--loop] [--min-atk-pct 0.9] [--min-skill-power 0.4] [--use-gotcha-tokens] [--store-locked-items]
+  npm start -- craft [max-runs] [cdp-port] [gear|charm|both] --confirm [--loop] [--level-band auto|100-115] [--min-atk-pct 0.9] [--min-skill-power 0.4] [--use-gotcha-tokens] [--store-locked-items]
   npm start -- constellation [port] [save-json-path]
 
 Commands:
@@ -191,17 +191,26 @@ async function runCraft(args) {
     if (!Number.isFinite(value) || value < 0) throw new Error(`${name} requires a non-negative number`);
     return value;
   };
+  const levelBandOption = args.indexOf("--level-band");
+  const levelBandValue = levelBandOption === -1 ? "auto" : args[levelBandOption + 1];
+  const levelBandLabels = new Map([["auto", "auto"], ["1-10", 0], ["10-20", 1], ["15-30", 2], ["20-40", 3], ["30-50", 4], ["40-65", 5], ["65-80", 6], ["80-100", 7], ["100-115", 8], ["115-125", 9]]);
+  if (!levelBandLabels.has(levelBandValue)) throw new Error("--level-band requires auto or a valid level band such as 100-115");
+  const levelBand = levelBandLabels.get(levelBandValue);
   const minAtkPct = valueOption("--min-atk-pct", 0.90);
   const minSkillPower = valueOption("--min-skill-power", 0.40);
-  const valueOptions = new Set(["--min-atk-pct", "--min-skill-power"]);
-  const optionValues = new Set([...valueOptions].flatMap((name) => [name, args[args.indexOf(name) + 1]]));
+  const valueOptions = new Set(["--level-band", "--min-atk-pct", "--min-skill-power"]);
+  const optionValues = new Set(valueOptions);
+  for (const name of valueOptions) {
+    const index = args.indexOf(name);
+    if (index !== -1) optionValues.add(args[index + 1]);
+  }
   const positional = args.filter((arg, index) => !optionValues.has(arg) && !valueOptions.has(args[index - 1]) && !["--confirm", "--loop", "--use-gotcha-tokens", "--store-locked-items"].includes(arg));
   const maxRuns = Number(positional.shift() ?? 1);
   const cdpPort = positional.shift() ?? "9222";
   const mode = positional.shift() ?? "gear";
   const endpoint = `${DEFAULT_ENDPOINT.replace(/:\d+$/, "")}:${cdpPort}`;
-  const result = await runCraftController({ endpoint, maxRuns, mode, confirm, loop, minAtkPct, minSkillPower, useGotchaTokens, storeLockedItems });
-  console.log(JSON.stringify({ mode, maxRuns, loop, minAtkPct, minSkillPower, ...result }, null, 2));
+  const result = await runCraftController({ endpoint, maxRuns, mode, levelBand, confirm, loop, minAtkPct, minSkillPower, useGotchaTokens, storeLockedItems });
+  console.log(JSON.stringify({ mode, maxRuns, loop, levelBand: levelBandValue, minAtkPct, minSkillPower, ...result }, null, 2));
 }
 
 async function runConstellation(args) {

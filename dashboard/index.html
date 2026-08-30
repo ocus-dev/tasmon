@@ -203,6 +203,7 @@
       if (!crafting) return;
       if (!craftSettingsPending) {
         $("craftMode").value = crafting.mode ?? "gear";
+        $("craftBand").value = String(crafting.levelBand ?? "auto");
         $("craftMinAtkPct").value = (crafting.minAtkPct ?? 0.9) * 100;
         $("craftMinSkillPower").value = (crafting.minSkillPower ?? 0.4) * 100;
         $("craftMinHpPct").value = (crafting.minHpPct ?? 0.9) * 100;
@@ -224,8 +225,8 @@
       $("craftLog").textContent = crafting.logs?.length ? crafting.logs.map((entry) => `${new Date(entry.at).toLocaleTimeString()} | ${entry.message}`).join("\n") : "Crafting log waiting.";
     }
     const craftOptions = $("craftMode").closest(".craft-options");
-    craftOptions.insertAdjacentHTML("beforeend", '<label><input id="craftUseGotchaTokens" type="checkbox"> Use gotcha tokens</label><label><input id="craftStoreLocked" type="checkbox"> Store locked items</label>');
-    const craftSettingsPayload = () => ({ mode: $("craftMode").value, minAtkPct: Number($("craftMinAtkPct").value) / 100, minSkillPower: Number($("craftMinSkillPower").value) / 100, minHpPct: Number($("craftMinHpPct").value) / 100, atkEnabled: $("craftAtkEnabled").checked, skillEnabled: $("craftSkillEnabled").checked, hpEnabled: $("craftHpEnabled").checked, useGotchaTokens: $("craftUseGotchaTokens").checked, storeLockedItems: $("craftStoreLocked").checked, atkOperator: $("craftAtkOperator").value, skillOperator: $("craftSkillOperator").value, hpOperator: $("craftHpOperator").value });
+    craftOptions.insertAdjacentHTML("beforeend", '<label>Item level band<select id="craftBand"><option value="auto">Auto</option><option value="0">Lv.1-10</option><option value="1">Lv.10-20</option><option value="2">Lv.15-30</option><option value="3">Lv.20-40</option><option value="4">Lv.30-50</option><option value="5">Lv.40-65</option><option value="6">Lv.65-80</option><option value="7">Lv.80-100</option><option value="8">Lv.100-115</option><option value="9">Lv.115-125</option></select></label><label><input id="craftUseGotchaTokens" type="checkbox"> Use gotcha tokens</label><label><input id="craftStoreLocked" type="checkbox"> Store locked items</label>');
+    const craftSettingsPayload = () => ({ mode: $("craftMode").value, levelBand: $("craftBand").value, minAtkPct: Number($("craftMinAtkPct").value) / 100, minSkillPower: Number($("craftMinSkillPower").value) / 100, minHpPct: Number($("craftMinHpPct").value) / 100, atkEnabled: $("craftAtkEnabled").checked, skillEnabled: $("craftSkillEnabled").checked, hpEnabled: $("craftHpEnabled").checked, useGotchaTokens: $("craftUseGotchaTokens").checked, storeLockedItems: $("craftStoreLocked").checked, atkOperator: $("craftAtkOperator").value, skillOperator: $("craftSkillOperator").value, hpOperator: $("craftHpOperator").value });
     async function saveCraftSettings() {
       const response = await fetch("/api/crafting/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(craftSettingsPayload()) });
       const data = await response.json();
@@ -728,7 +729,7 @@
         renderCrafting(data);
       } catch (error) { $("craftStatus").textContent = `Error: ${error.message}`; button.disabled = false; }
     });
-    const craftSettingIds = ["craftMode", "craftMinAtkPct", "craftAtkOperator", "craftMinSkillPower", "craftSkillOperator", "craftMinHpPct", "craftHpOperator", "craftAtkEnabled", "craftSkillEnabled", "craftHpEnabled", "craftUseGotchaTokens", "craftStoreLocked"];
+    const craftSettingIds = ["craftMode", "craftBand", "craftMinAtkPct", "craftAtkOperator", "craftMinSkillPower", "craftSkillOperator", "craftMinHpPct", "craftHpOperator", "craftAtkEnabled", "craftSkillEnabled", "craftHpEnabled", "craftUseGotchaTokens", "craftStoreLocked"];
     craftSettingIds.forEach((id) => {
       $(id).addEventListener("input", () => { craftSettingsPending = true; updateCraftSummary(); });
       $(id).addEventListener("change", () => { craftSettingsPending = true; if (id.endsWith("Enabled")) setCraftRuleControls(); updateCraftSummary(); saveCraftSettings().catch((error) => { $("craftStatus").textContent = `Error: ${error.message}`; }); });
