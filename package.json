@@ -6,6 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "node src/cli.js",
+    "reproduce-stage-spike": "node src/reproduce-stage-spike.js",
+    "sweep-stage-timing": "node src/sweep-stage-timing.js",
     "restart-live": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/restart-live.ps1",
     "restart-live-lan": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/restart-live.ps1 -HostAddress 0.0.0.0",
     "check": "node --check src/asar.js && node --check src/cli.js && node --check src/cdp.js && node --check src/craft-controller.js && node --check src/constellation.js && node --check src/damage-model.js && node --check src/live.js && node --check src/save.js && node --check src/game-runtime.js && node --check src/real-stats.js && node --check src/report.js && node --check src/simulate-kpm.js",

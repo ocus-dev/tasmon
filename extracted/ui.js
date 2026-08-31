@@ -939,6 +939,9 @@ function currentEnemyMaxHp() {
 }
 
 function spawnWave() {
+  const turbo = window.__turboRespawn;
+  if (turbo?.experimental && turbo.active450Context === "live") turbo.telemetry.spawnWaveFrom450LiveWave += 1;
+  if (turbo?.experimental && turbo.active450Context === "empty") turbo.telemetry.spawnWaveFrom450EmptyWave += 1;
   dailyBossActive = false;
   enemyDots = [[], [], []]; // 継続ダメージは敵が入れ替わったら消える
   dotAcc = [0, 0, 0];

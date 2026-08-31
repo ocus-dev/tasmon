@@ -682,6 +682,8 @@ async function setTurboRespawn(enabled, endpoint, experimental = false, verbose 
         callbacks450Executed: 0,
         callbacks450WithLiveWave: 0,
         callbacks450WithEmptyWave: 0,
+        spawnWaveFrom450LiveWave: 0,
+        spawnWaveFrom450EmptyWave: 0,
         killsAtPulse: 0,
         stageAtPulse: null,
         playerHpAtPulse: null,
@@ -766,9 +768,15 @@ async function setTurboRespawn(enabled, endpoint, experimental = false, verbose 
         turbo.telemetry.callbacks450Executed += 1;
         const current = window.__battleDebug?.();
         const enemyGroup = current?.enemyGroup ?? [];
-        if (enemyGroup.some((hp) => hp > 0)) turbo.telemetry.callbacks450WithLiveWave += 1;
+        const waveState = enemyGroup.some((hp) => hp > 0) ? "live" : "empty";
+        if (waveState === "live") turbo.telemetry.callbacks450WithLiveWave += 1;
         else turbo.telemetry.callbacks450WithEmptyWave += 1;
-        return callback.apply(this, callbackArgs);
+        turbo.active450Context = waveState;
+        try {
+          return callback.apply(this, callbackArgs);
+        } finally {
+          turbo.active450Context = null;
+        }
       } : callback;
       if (turbo.experimental && delay === 450) turbo.telemetry.callbacks450Scheduled += 1;
       const timer = original.call(this, trackedCallback, delay, ...args);
@@ -807,6 +815,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     crafting: new InputService("crafting", inputCoordinator),
     awakening: new InputService("awakening", inputCoordinator),
     turbo: new InputService("turbo", inputCoordinator),
+    farmLoop: new InputService("farm-loop", inputCoordinator),
   };
   const poll = async () => {
     try {
@@ -1311,6 +1320,22 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
         await runUltraAutomation();
         response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         response.end(JSON.stringify({ ...ultraAutomation }));
+      } catch (error) {
+        response.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ error: error.message }));
+      }
+      return;
+    }
+    if (pathname === "/api/farm-sequence" && request.method === "POST") {
+      try {
+        const execution = await inputServices.farmLoop.run("sequence", () => farmLoopSequenceExpression(endpoint));
+        if (!execution.accepted) {
+          response.writeHead(409, { "content-type": "application/json; charset=utf-8" });
+          response.end(JSON.stringify({ error: "input-busy", blockers: execution.blockers }));
+          return;
+        }
+        response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        response.end(JSON.stringify(execution.result));
       } catch (error) {
         response.writeHead(400, { "content-type": "application/json; charset=utf-8" });
         response.end(JSON.stringify({ error: error.message }));
@@ -2000,4 +2025,29 @@ async function setTurboExperimental(enabled, verbose, endpoint) {
     if (!turbo?.enabled || typeof turbo.setExperimental !== "function") return { experimental: false, verbose: false, telemetry: null };
     return turbo.setExperimental(${Boolean(enabled)}, ${Boolean(verbose)});
   })()`, endpoint);
+}
+
+function farmLoopSequenceExpression(endpoint) {
+  return evaluateRuntime(`(async () => {
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const mapTab = document.querySelector('.bar-tab[data-win="map"]')
+      ?? [...document.querySelectorAll('.bar-tab')].find((tab) => /map|地図/i.test(tab.textContent));
+    let labels = [...document.querySelectorAll('.portal-node-label')];
+    if (!labels.length && mapTab) { mapTab.click(); await sleep(250); labels = [...document.querySelectorAll('.portal-node-label')]; }
+    const farmLabels = labels.filter((label) => {
+      const node = label.previousElementSibling;
+      return node && !node.classList.contains("locked") && !label.textContent.includes("[10-10]");
+    });
+    const results = [];
+    for (let index = 0; index < 4; index += 1) {
+      const label = farmLabels[(index * 3) % Math.max(1, farmLabels.length)];
+      const button = label?.parentElement?.querySelector(".portal-loop");
+      if (!button) { results.push({ result: "missing-farm-control" }); continue; }
+      const wasOn = button.classList.contains("on");
+      if (!wasOn) button.click();
+      results.push({ result: wasOn ? "already-farming" : "farm-enabled", label: label.textContent.trim() });
+      if (index < 3) await sleep(500);
+    }
+    return { results, stage: window.__battleDebug?.()?.state?.stage ?? null };
+  })()`, endpoint, { awaitPromise: true });
 }

@@ -111,6 +111,7 @@
       </section>
       <section class="section"><div class="section-head"><div class="label">Egg and awakening automation</div><div class="note">Opt-in; checks every 5 seconds</div></div><div class="egg-automation"><label><input type="checkbox" id="autoOpenUltra"> Auto-open eggs up to</label><select id="autoOpenRarity" aria-label="Maximum egg rarity"><option value="ultra" selected>Ultra</option><option value="legend">Legendary</option><option value="immortal">Immortal</option><option value="arcana">Arcana</option><option value="beyond">Beyond</option><option value="century">Century</option><option value="cosmic">Cosmic</option><option value="celestial">Celestial</option></select><label><input type="checkbox" id="autoCondenseUltra"> Awaken duplicate Ultra, Legendary, and Immortal monsters up to</label><select id="condenseMaxAwakening" aria-label="Maximum auto-condense awakening level"><option value="1">Awakening 1</option><option value="2">Awakening 2</option><option value="3">Awakening 3</option><option value="4">Awakening 4</option><option value="5">Awakening 5</option><option value="6" selected>Awakening 6</option></select><label>Tidy zero-awakening duplicates of<select id="tidyZeroAwakeningRarity" aria-label="Rarity for zero-awakening tidy-up"><option value="off" selected>Off</option><option value="common">Common</option><option value="rare">Rare</option><option value="ultra">Ultra</option><option value="legend">Legendary</option><option value="immortal">Immortal</option><option value="arcana">Arcana</option><option value="beyond">Beyond</option><option value="century">Century</option><option value="cosmic">Cosmic</option><option value="celestial">Celestial</option></select></label><span class="egg-automation-status" id="ultraAutomationStatus">Automation off</span></div></section>
       <section class="section"><div class="section-head"><div class="label">High-rarity leveling</div><div class="note">Runs stage 8-5 until every awakened Ultra, Legendary, and Immortal reaches level 90</div></div><div class="egg-automation"><label><input type="checkbox" id="autoLevelUltra"> Level Ultra, Legendary, and Immortal monsters to 90</label><span class="egg-automation-status" id="ultraLevelingStatus">Automation off</span></div><pre class="ultra-debug" id="ultraLevelingConsole" tabindex="0">High-rarity leveling console waiting.</pre></section>
+      <section class="section"><div class="section-head"><div class="label">Farm loop sequence</div><div class="note">Runs four non-boss Farm this stage clicks every 20 seconds</div></div><div class="egg-automation"><label><input type="checkbox" id="autoFarmSequence"> Repeat optimal farm sequence</label><span class="egg-automation-status" id="farmSequenceStatus">Automation off</span></div><pre class="ultra-debug" id="farmSequenceConsole" tabindex="0">Farm sequence waiting.</pre></section>
       <section class="section"><div class="section-head"><div class="label">Input syslog</div><div class="note" id="activeInputs">No active input process</div></div><pre class="syslog" id="syslog" tabindex="0">Input syslog waiting.</pre></section>
     </div>
     <p class="note warning" id="warning">Rates begin after the first two samples.</p>
@@ -682,6 +683,34 @@
         ultraLevelControl.commit(data.enabled === true);
         renderUltraLeveling(data);
       } catch (error) { ultraLevelControl.rollback(); $("ultraLevelingStatus").textContent = `Error: ${error.message}`; }
+    });
+    const farmSequenceIntervalMs = 20000;
+    let farmSequenceTimer = null;
+    let farmSequenceBusy = false;
+    async function runFarmSequence() {
+      if (farmSequenceBusy) return;
+      farmSequenceBusy = true;
+      $("farmSequenceStatus").textContent = "Running...";
+      try {
+        const response = await fetch("/api/farm-sequence", { method: "POST" });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error ?? `Unable to run farm sequence (HTTP ${response.status})`);
+        $("farmSequenceStatus").textContent = `Complete · stage ${data.stage ?? "--"}`;
+        $("farmSequenceConsole").textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        $("farmSequenceStatus").textContent = `Error: ${error.message}`;
+        $("farmSequenceConsole").textContent = `Error: ${error.message}`;
+      } finally { farmSequenceBusy = false; }
+    }
+    $("autoFarmSequence").addEventListener("change", () => {
+      if (farmSequenceTimer) clearInterval(farmSequenceTimer);
+      farmSequenceTimer = null;
+      if ($("autoFarmSequence").checked) {
+        runFarmSequence();
+        farmSequenceTimer = setInterval(runFarmSequence, farmSequenceIntervalMs);
+      } else {
+        $("farmSequenceStatus").textContent = "Automation off";
+      }
     });
     $("etchQuality").addEventListener("change", renderEtching);
     $("etchLocation").addEventListener("change", renderEtching);
