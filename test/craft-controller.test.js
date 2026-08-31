@@ -83,3 +83,18 @@ test("combined crafting gives charm groups a turn before returning to gear", () 
   assert.equal(selectCraftGroup(groups, "both", "charm").mode, "charm");
   assert.equal(selectCraftGroup(groups, "both", "gear").mode, "gear");
 });
+
+test("level 100-115 items use the current high-level craft band", () => {
+  const groups = craftableGroupCount({ items: items(9, { lv: 110 }), storage: [], equipped: [] }, "gear");
+
+  assert.equal(groups[0].band, 8);
+  assert.equal(groups[0].batches, 1);
+});
+
+test("selected level band limits craft candidates", () => {
+  const snapshot = { items: [...items(9, { lv: 80 }), ...items(9, { lv: 110 })], storage: [], equipped: [] };
+
+  const groups = craftableGroupCount(snapshot, "gear", { levelBand: 8 });
+
+  assert.deepEqual(groups.map(({ band, count }) => ({ band, count })), [{ band: 8, count: 9 }]);
+});

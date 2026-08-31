@@ -25,6 +25,7 @@ npm start -- render-report save.json report.html
 npm start -- live
 npm start -- turbo
 npm start -- craft 1 9222 gear --confirm
+npm start -- craft 1 9222 gear --confirm --level-band 100-115
 npm start -- craft 1 9222 both --confirm --min-atk-pct 0.9 --min-skill-power 0.4
 npm start -- constellation
 ```
@@ -95,6 +96,7 @@ node src/cli.js craft 1 9222 gear --confirm --loop
 ```
 
 Before each run it reads the live debug state, requires a safe group of nine unlocked, unequipped items, and reports an explicit `exitReason` when it stops. If the active inventory has no safe batch, it checks storage and enables the game's existing `Include storage items` control when a safe storage-backed batch is available. `both` mode chooses between eligible gear and charm batches, keeping the lanes separate. Immortal gear is eligible unless its combined `atkPct` is greater than `0.90` and its combined `skillPower` is greater than `0.40`; those values are summed from the item's `opts` and `enhances` arrays and are preserved from crafting. Override the defaults with `--min-atk-pct` and `--min-skill-power` (values are decimal fractions, so 90% is `0.9`). Gear-capable modes batch-open all pending common, rare, and boss chests through the game's existing chest API at the start of every iteration, including when no safe craft group exists, and checks again after a verified gear craft. Without `--confirm`, it refuses to run because crafting changes the live game state.
+The controller supports the game's current level bands through `125`, including `100-115`. By default it selects the best available band automatically; pass `--level-band 100-115` to restrict materials to that band. The live dashboard exposes the same choice under `Item level band`.
 
 Add `--loop` to repeat verified crafts every 10 seconds. The loop stops when no safe nine-item group remains or any controller check fails. Press `Ctrl+C` to stop it manually.
 

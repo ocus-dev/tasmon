@@ -841,10 +841,14 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
   let turboVerbose = false;
   let turboTelemetry = null;
   let turboResetBarrier = false;
-  const ultraAutomation = { open: false, openRarity: "ultra", condense: false, condenseMaxAwakening: 6, tidyZeroAwakeningRarity: "off", busy: false, last: null, lastError: null };
+  const ultraAutomation = { open: false, openRarity: "ultra", condense: false, condenseMaxAwakening: 6, tidyZeroAwakeningRarity: "off", intervalMs: 15_000, busy: false, last: null, lastError: null };
+  let ultraAutomationTimer = null;
+  let ultraAutomationGeneration = 0;
   const runUltraAutomation = async () => {
     if (ultraAutomation.busy || (!ultraAutomation.open && !ultraAutomation.condense && ultraAutomation.tidyZeroAwakeningRarity === "off")) return;
+    const generation = ultraAutomationGeneration;
     const execution = await inputServices.ultraAutomation.run("automation-cycle", async () => {
+      if (generation !== ultraAutomationGeneration || (!ultraAutomation.open && !ultraAutomation.condense && ultraAutomation.tidyZeroAwakeningRarity === "off")) return { skipped: true };
       ultraAutomation.busy = true;
       try {
         ultraAutomation.last = await evaluateRuntime(ultraAutomationExpression(ultraAutomation, ULTRA_AUTOMATION_TIMEOUT_MS), endpoint, { awaitPromise: true });
@@ -861,7 +865,11 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     });
     if (!execution.accepted) ultraAutomation.lastError = `Input scheduling failed`;
   };
-  const ultraAutomationTimer = setInterval(runUltraAutomation, 15_000);
+  const scheduleUltraAutomation = () => {
+    if (ultraAutomationTimer) clearInterval(ultraAutomationTimer);
+    ultraAutomationTimer = setInterval(runUltraAutomation, ultraAutomation.intervalMs);
+  };
+  scheduleUltraAutomation();
   const ultraLeveling = { enabled: false, running: false, last: null, lastError: null, logs: [], levels: new Map(), restored: false };
   const logUltraLeveling = (message, detail = null) => {
     ultraLeveling.logs.push({ at: Date.now(), message, detail });
@@ -1317,6 +1325,9 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
         ultraAutomation.condense = body.condense === true;
         ultraAutomation.condenseMaxAwakening = Number.isInteger(body.condenseMaxAwakening) ? Math.max(1, Math.min(6, body.condenseMaxAwakening)) : 6;
         ultraAutomation.tidyZeroAwakeningRarity = body.tidyZeroAwakeningRarity === "off" || RARITY_ORDER.includes(body.tidyZeroAwakeningRarity) ? body.tidyZeroAwakeningRarity : "off";
+        ultraAutomation.intervalMs = Number.isFinite(Number(body.intervalMs)) ? Math.max(5_000, Math.min(3_600_000, Math.round(Number(body.intervalMs) / 1_000) * 1_000)) : ultraAutomation.intervalMs;
+        ultraAutomationGeneration += 1;
+        scheduleUltraAutomation();
         await runUltraAutomation();
         response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         response.end(JSON.stringify({ ...ultraAutomation }));
@@ -1467,7 +1478,7 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
 
   server.on("close", () => {
     clearInterval(timer);
-    clearInterval(ultraAutomationTimer);
+    if (ultraAutomationTimer) clearInterval(ultraAutomationTimer);
     clearInterval(ultraLevelingTimer);
     stopCraftAutomation();
     if (turboRefreshTimer) clearInterval(turboRefreshTimer);
