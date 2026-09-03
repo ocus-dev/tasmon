@@ -62,7 +62,3 @@ Keep both PowerShell windows open while using the dashboard. Close the dashboard
 ### Awakening
 
 ![Awakening](screens/Awakening.png)
-
-## Important
-
-The dashboard can change the live game save. Export a save from TASMON before using crafting, locking, awakening, etching, or other automation features.

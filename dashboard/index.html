@@ -182,7 +182,7 @@
       $("ultraAutomationStatus").textContent = automation.lastError ? `Error: ${automation.lastError}` : automation.busy ? "Running..." : (automation.open || automation.condense || automation.tidyZeroAwakeningRarity !== "off" ? result || "Automation enabled; waiting for next run" : "Automation off");
     }
     const setCraftRuleControls = () => {
-      for (const [checkboxId, ruleId, thresholdId, operatorId] of [["craftAtkEnabled", "craftAtkRule", "craftMinAtkPct", "craftAtkOperator"], ["craftSkillEnabled", "craftSkillRule", "craftMinSkillPower", "craftSkillOperator"], ["craftHpEnabled", "craftHpRule", "craftMinHpPct", "craftHpOperator"]]) {
+      for (const [checkboxId, ruleId, thresholdId, operatorId] of [["craftAtkEnabled", "craftAtkRule", "craftMinAtkPct", "craftAtkOperator"], ["craftSkillEnabled", "craftSkillRule", "craftMinSkillPower", "craftSkillOperator"], ["craftHpEnabled", "craftHpRule", "craftMinHpPct", "craftHpOperator"], ["craftDropEnabled", "craftDropRule", "craftMinDropBonus", "craftDropOperator"]]) {
         const enabled = $(checkboxId).checked;
         $(ruleId).classList.toggle("craft-rule-disabled", !enabled);
         $(thresholdId).disabled = !enabled;
@@ -191,7 +191,7 @@
     };
     let craftSettingsPending = false;
     const updateCraftSummary = () => {
-      const rules = [["craftAtkEnabled", "Attack", "craftMinAtkPct", "craftAtkOperator"], ["craftSkillEnabled", "Skill", "craftMinSkillPower", "craftSkillOperator"], ["craftHpEnabled", "HP", "craftMinHpPct", "craftHpOperator"]]
+      const rules = [["craftAtkEnabled", "Attack", "craftMinAtkPct", "craftAtkOperator"], ["craftSkillEnabled", "Skill", "craftMinSkillPower", "craftSkillOperator"], ["craftHpEnabled", "HP", "craftMinHpPct", "craftHpOperator"], ["craftDropEnabled", "Egg drop", "craftMinDropBonus", "craftDropOperator"]]
         .filter(([checkboxId]) => $(checkboxId).checked)
         .map(([, label, thresholdId, operatorId]) => ({ label, threshold: $(thresholdId).value, operator: $(operatorId).value }));
       const summary = rules.reduce((text, rule, index) => index === 0 ? `${rule.label} ${rule.threshold}%` : `${text} ${rule.operator} ${rule.label} ${rule.threshold}%`, "") || "base egg-drop jewelry only";
@@ -205,14 +205,18 @@
         $("craftMinAtkPct").value = (crafting.minAtkPct ?? 0.9) * 100;
         $("craftMinSkillPower").value = (crafting.minSkillPower ?? 0.4) * 100;
         $("craftMinHpPct").value = (crafting.minHpPct ?? 0.9) * 100;
+        $("craftMinDropBonus").value = (crafting.minDropBonus ?? 0) * 100;
         $("craftHpEnabled").checked = crafting.hpEnabled === true;
+        $("craftDropEnabled").checked = crafting.dropEnabled === true;
         $("craftAtkEnabled").checked = crafting.atkEnabled !== false;
         $("craftSkillEnabled").checked = crafting.skillEnabled !== false;
         $("craftUseGotchaTokens").checked = crafting.useGotchaTokens === true;
         $("craftStoreLocked").checked = crafting.storeLockedItems === true;
+        $("craftLockKept").checked = crafting.lockKeptItems === true;
         $("craftAtkOperator").value = crafting.atkOperator ?? "AND";
         $("craftSkillOperator").value = crafting.skillOperator ?? "AND";
         $("craftHpOperator").value = crafting.hpOperator ?? "AND";
+        $("craftDropOperator").value = crafting.dropOperator ?? "AND";
         setCraftRuleControls();
         updateCraftSummary();
       }
@@ -223,8 +227,9 @@
       $("craftLog").textContent = crafting.logs?.length ? crafting.logs.map((entry) => `${new Date(entry.at).toLocaleTimeString()} | ${entry.message}`).join("\n") : "Crafting log waiting.";
     }
     const craftOptions = $("craftMode").closest(".craft-options");
-    craftOptions.insertAdjacentHTML("beforeend", '<label>Item level band<select id="craftBand"><option value="auto">Auto</option><option value="0">Lv.1-10</option><option value="1">Lv.10-20</option><option value="2">Lv.15-30</option><option value="3">Lv.20-40</option><option value="4">Lv.30-50</option><option value="5">Lv.40-65</option><option value="6">Lv.65-80</option><option value="7">Lv.80-100</option><option value="8">Lv.100-115</option><option value="9">Lv.115-125</option></select></label><label><input id="craftUseGotchaTokens" type="checkbox"> Use gotcha tokens</label><label><input id="craftStoreLocked" type="checkbox"> Store locked items</label>');
-    const craftSettingsPayload = () => ({ mode: $("craftMode").value, levelBand: $("craftBand").value, minAtkPct: Number($("craftMinAtkPct").value) / 100, minSkillPower: Number($("craftMinSkillPower").value) / 100, minHpPct: Number($("craftMinHpPct").value) / 100, atkEnabled: $("craftAtkEnabled").checked, skillEnabled: $("craftSkillEnabled").checked, hpEnabled: $("craftHpEnabled").checked, useGotchaTokens: $("craftUseGotchaTokens").checked, storeLockedItems: $("craftStoreLocked").checked, atkOperator: $("craftAtkOperator").value, skillOperator: $("craftSkillOperator").value, hpOperator: $("craftHpOperator").value });
+    $("craftHpRule").insertAdjacentHTML("afterend", '<div class="craft-rule craft-rule-disabled" id="craftDropRule"><label class="craft-rule-name"><input id="craftDropEnabled" type="checkbox"> Egg drop</label><label class="craft-rule-threshold">At least <input id="craftMinDropBonus" type="number" min="0" step="0.1" value="0" inputmode="decimal"><span>%</span></label><label class="craft-rule-operator">Combine<select id="craftDropOperator"><option value="AND" selected>AND</option><option value="OR">OR</option></select></label></div>');
+    craftOptions.insertAdjacentHTML("beforeend", '<label>Item level band<select id="craftBand"><option value="auto">Auto</option><option value="0">Lv.1-10</option><option value="1">Lv.10-20</option><option value="2">Lv.15-30</option><option value="3">Lv.20-40</option><option value="4">Lv.30-50</option><option value="5">Lv.40-65</option><option value="6">Lv.65-80</option><option value="7">Lv.80-100</option><option value="8">Lv.100-115</option><option value="9">Lv.115-125</option></select></label><label><input id="craftUseGotchaTokens" type="checkbox"> Use gotcha tokens</label><label><input id="craftStoreLocked" type="checkbox"> Store locked items</label><label><input id="craftLockKept" type="checkbox" checked> Lock kept gear items in the game</label><button class="button" id="craftLockNow" type="button">Lock matching items now</button>');
+    const craftSettingsPayload = () => ({ mode: $("craftMode").value, levelBand: $("craftBand").value, minAtkPct: Number($("craftMinAtkPct").value) / 100, minSkillPower: Number($("craftMinSkillPower").value) / 100, minHpPct: Number($("craftMinHpPct").value) / 100, minDropBonus: Number($("craftMinDropBonus").value) / 100, atkEnabled: $("craftAtkEnabled").checked, skillEnabled: $("craftSkillEnabled").checked, hpEnabled: $("craftHpEnabled").checked, dropEnabled: $("craftDropEnabled").checked, useGotchaTokens: $("craftUseGotchaTokens").checked, storeLockedItems: $("craftStoreLocked").checked, lockKeptItems: $("craftLockKept").checked, atkOperator: $("craftAtkOperator").value, skillOperator: $("craftSkillOperator").value, hpOperator: $("craftHpOperator").value, dropOperator: $("craftDropOperator").value });
     async function saveCraftSettings() {
       const response = await fetch("/api/crafting/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(craftSettingsPayload()) });
       const data = await response.json();
@@ -713,7 +718,16 @@
         renderCrafting(data);
       } catch (error) { $("craftStatus").textContent = `Error: ${error.message}`; button.disabled = false; }
     });
-    const craftSettingIds = ["craftMode", "craftBand", "craftMinAtkPct", "craftAtkOperator", "craftMinSkillPower", "craftSkillOperator", "craftMinHpPct", "craftHpOperator", "craftAtkEnabled", "craftSkillEnabled", "craftHpEnabled", "craftUseGotchaTokens", "craftStoreLocked"];
+    $("craftLockNow").addEventListener("click", async () => {
+      const button = $("craftLockNow"); button.disabled = true;
+      try {
+        const response = await fetch("/api/crafting/lock-kept", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(craftSettingsPayload()) });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error ?? "Unable to lock matching items");
+        $("craftStatus").textContent = data.locked ? `Locked ${data.locked} matching item${data.locked === 1 ? "" : "s"}: ${data.ids.join(", ")}` : "No unlocked items matched the Keep rules";
+      } catch (error) { $("craftStatus").textContent = `Error: ${error.message}`; } finally { button.disabled = false; }
+    });
+    const craftSettingIds = ["craftMode", "craftBand", "craftMinAtkPct", "craftAtkOperator", "craftMinSkillPower", "craftSkillOperator", "craftMinHpPct", "craftHpOperator", "craftMinDropBonus", "craftDropOperator", "craftAtkEnabled", "craftSkillEnabled", "craftHpEnabled", "craftDropEnabled", "craftUseGotchaTokens", "craftStoreLocked", "craftLockKept"];
     craftSettingIds.forEach((id) => {
       $(id).addEventListener("input", () => { craftSettingsPending = true; updateCraftSummary(); });
       $(id).addEventListener("change", () => { craftSettingsPending = true; if (id.endsWith("Enabled")) setCraftRuleControls(); updateCraftSummary(); saveCraftSettings().catch((error) => { $("craftStatus").textContent = `Error: ${error.message}`; }); });
