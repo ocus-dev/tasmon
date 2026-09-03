@@ -60,6 +60,34 @@ test("HP can be enabled as a preservation trait", () => {
   );
 });
 
+test("At least HP threshold includes an exact match", () => {
+  const itemSet = items(9, { stats: { atkPct: 0, skillPower: 0, hpPct: 3.5 } });
+
+  assert.deepEqual(
+    craftableGroupCount({ items: itemSet, storage: [], equipped: [] }, "gear", {
+      atkEnabled: false,
+      skillEnabled: false,
+      hpEnabled: true,
+      minHpPct: 3.5,
+    }),
+    [],
+  );
+});
+
+test("Egg drop threshold preserves an exact match", () => {
+  const itemSet = items(9, { stats: { dropBonus: 0.01 } });
+
+  assert.deepEqual(
+    craftableGroupCount({ items: itemSet, storage: [], equipped: [] }, "gear", {
+      atkEnabled: false,
+      skillEnabled: false,
+      dropEnabled: true,
+      minDropBonus: 0.01,
+    }),
+    [],
+  );
+});
+
 test("base egg-drop jewelry is always preserved", () => {
   const jewelry = items(9, { part: "charm", baseStats: ["dropBonus"] });
 

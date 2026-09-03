@@ -7,7 +7,7 @@ import { AWAKENING, AWAKEN_MAX, DEX_BUFF_CAPS, EGG_DROP_CHANCE, JOBS, PERKS, RAR
 import { ENHANCE_GRADES, ENHANCE_KINDS, ENHANCE_PART_CAT_LABEL, ENHANCE_PART_POOLS, ENHANCE_ROLL_COSTS, STAT_META, enhancePartCat, enhanceSlotsOf } from "../extracted/equipment.js";
 import { resolvePartyAttack } from "./real-stats.js";
 import { renderReport } from "./report.js";
-import { runCraftController } from "./craft-controller.js";
+import { lockKeptItems, runCraftController } from "./craft-controller.js";
 import { InputCoordinator, InputService, ProcessLogger } from "./process-service.js";
 
 const LEVEL_CAP = 100;
@@ -942,14 +942,18 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     minAtkPct: 0.9,
     minSkillPower: 0.4,
     minHpPct: 0.9,
+    minDropBonus: 0,
     atkEnabled: true,
     skillEnabled: true,
     hpEnabled: false,
+    dropEnabled: false,
     useGotchaTokens: false,
     storeLockedItems: false,
+    lockKeptItems: true,
     atkOperator: "AND",
     skillOperator: "AND",
     hpOperator: "AND",
+    dropOperator: "AND",
     runs: 0,
     lastResult: null,
     exitReason: null,
@@ -964,14 +968,18 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     minAtkPct: craftAutomation.minAtkPct,
     minSkillPower: craftAutomation.minSkillPower,
     minHpPct: craftAutomation.minHpPct,
+    minDropBonus: craftAutomation.minDropBonus,
     atkEnabled: craftAutomation.atkEnabled,
     skillEnabled: craftAutomation.skillEnabled,
     hpEnabled: craftAutomation.hpEnabled,
+    dropEnabled: craftAutomation.dropEnabled,
     useGotchaTokens: craftAutomation.useGotchaTokens,
     storeLockedItems: craftAutomation.storeLockedItems,
+    lockKeptItems: craftAutomation.lockKeptItems,
     atkOperator: craftAutomation.atkOperator,
     skillOperator: craftAutomation.skillOperator,
     hpOperator: craftAutomation.hpOperator,
+    dropOperator: craftAutomation.dropOperator,
     runs: craftAutomation.runs,
     lastResult: craftAutomation.lastResult,
     exitReason: craftAutomation.exitReason,
@@ -982,21 +990,25 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     if (craftAutomation.controller) craftAutomation.controller.abort();
     craftAutomation.running = false;
   };
-  const startCraftAutomation = ({ mode, levelBand, minAtkPct, minSkillPower, minHpPct, atkEnabled, skillEnabled, hpEnabled, useGotchaTokens, storeLockedItems, atkOperator, skillOperator, hpOperator }) => {
+  const startCraftAutomation = ({ mode, levelBand, minAtkPct, minSkillPower, minHpPct, minDropBonus, atkEnabled, skillEnabled, hpEnabled, dropEnabled, useGotchaTokens, storeLockedItems, lockKeptItems, atkOperator, skillOperator, hpOperator, dropOperator }) => {
     if (craftAutomation.running) throw new Error("Craft automation is already running");
     craftAutomation.mode = mode;
     craftAutomation.levelBand = levelBand;
     craftAutomation.minAtkPct = minAtkPct;
     craftAutomation.minSkillPower = minSkillPower;
     craftAutomation.minHpPct = minHpPct;
+    craftAutomation.minDropBonus = minDropBonus;
     craftAutomation.atkEnabled = atkEnabled;
     craftAutomation.skillEnabled = skillEnabled;
     craftAutomation.hpEnabled = hpEnabled;
+    craftAutomation.dropEnabled = dropEnabled;
     craftAutomation.useGotchaTokens = useGotchaTokens;
     craftAutomation.storeLockedItems = storeLockedItems;
+    craftAutomation.lockKeptItems = lockKeptItems;
     craftAutomation.atkOperator = atkOperator;
     craftAutomation.skillOperator = skillOperator;
     craftAutomation.hpOperator = hpOperator;
+    craftAutomation.dropOperator = dropOperator;
     craftAutomation.runs = 0;
     craftAutomation.lastResult = null;
     craftAutomation.exitReason = null;
@@ -1015,14 +1027,18 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
         minAtkPct,
         minSkillPower,
         minHpPct,
+        minDropBonus,
         atkEnabled,
         skillEnabled,
         hpEnabled,
+        dropEnabled,
         useGotchaTokens,
         storeLockedItems,
+          lockKeptItems,
         atkOperator,
         skillOperator,
         hpOperator,
+        dropOperator,
         signal: craftAutomation.controller.signal,
         log: (message) => {
           craftAutomation.logs.push({ at: Date.now(), message });
@@ -1185,6 +1201,33 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
       }
       return;
     }
+    if (pathname === "/api/crafting/lock-kept" && request.method === "POST") {
+      try {
+        if (craftAutomation.running) throw new Error("Stop craft automation before locking kept items");
+        const body = await readRequestBody(request);
+        const result = await inputServices.crafting.run("lock-kept-items", () => lockKeptItems(endpoint, {
+          minAtkPct: Number(body.minAtkPct ?? craftAutomation.minAtkPct),
+          minSkillPower: Number(body.minSkillPower ?? craftAutomation.minSkillPower),
+          minHpPct: Number(body.minHpPct ?? craftAutomation.minHpPct),
+          minDropBonus: Number(body.minDropBonus ?? craftAutomation.minDropBonus),
+          atkEnabled: body.atkEnabled !== false,
+          skillEnabled: body.skillEnabled !== false,
+          hpEnabled: body.hpEnabled === true,
+          dropEnabled: body.dropEnabled === true,
+          atkOperator: body.atkOperator,
+          skillOperator: body.skillOperator,
+          hpOperator: body.hpOperator,
+          dropOperator: body.dropOperator,
+        }));
+        if (!result.accepted) throw new Error("Input scheduling failed");
+        response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        response.end(JSON.stringify(result.result));
+      } catch (error) {
+        response.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ error: error.message }));
+      }
+      return;
+    }
     if (pathname === "/api/crafting" && request.method === "POST") {
       try {
         const body = await readRequestBody(request);
@@ -1194,18 +1237,22 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
         const minAtkPct = Number(body.minAtkPct ?? 0.9);
         const minSkillPower = Number(body.minSkillPower ?? 0.4);
         const minHpPct = Number(body.minHpPct ?? 0.9);
+        const minDropBonus = Number(body.minDropBonus ?? 0);
         const atkEnabled = body.atkEnabled !== false;
         const skillEnabled = body.skillEnabled !== false;
         const hpEnabled = body.hpEnabled === true;
+        const dropEnabled = body.dropEnabled === true;
         const atkOperator = body.atkOperator === "OR" ? "OR" : "AND";
         const skillOperator = body.skillOperator === "OR" ? "OR" : "AND";
         const hpOperator = body.hpOperator === "OR" ? "OR" : "AND";
         if (!new Set(["gear", "charm", "both"]).has(mode)) throw new Error("Mode must be gear, charm, or both");
         if (levelBand !== "auto" && (!Number.isInteger(Number(levelBand)) || Number(levelBand) < 0 || Number(levelBand) > 9)) throw new Error("Level band must be auto or a valid level band index");
-        if (!Number.isFinite(minAtkPct) || minAtkPct < 0 || !Number.isFinite(minSkillPower) || minSkillPower < 0 || !Number.isFinite(minHpPct) || minHpPct < 0) throw new Error("Thresholds must be non-negative numbers");
+        if (!Number.isFinite(minAtkPct) || minAtkPct < 0 || !Number.isFinite(minSkillPower) || minSkillPower < 0 || !Number.isFinite(minHpPct) || minHpPct < 0 || !Number.isFinite(minDropBonus) || minDropBonus < 0) throw new Error("Thresholds must be non-negative numbers");
         const useGotchaTokens = body.useGotchaTokens === true;
         const storeLockedItems = body.storeLockedItems === true;
-        startCraftAutomation({ mode, levelBand, minAtkPct, minSkillPower, minHpPct, atkEnabled, skillEnabled, hpEnabled, useGotchaTokens, storeLockedItems, atkOperator, skillOperator, hpOperator });
+        const lockKeptItems = body.lockKeptItems === true;
+        const dropOperator = body.dropOperator === "OR" ? "OR" : "AND";
+        startCraftAutomation({ mode, levelBand, minAtkPct, minSkillPower, minHpPct, minDropBonus, atkEnabled, skillEnabled, hpEnabled, dropEnabled, useGotchaTokens, storeLockedItems, lockKeptItems, atkOperator, skillOperator, hpOperator, dropOperator });
         response.writeHead(202, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         response.end(JSON.stringify(craftStatus()));
       } catch (error) {
@@ -1223,9 +1270,11 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
         const minAtkPct = Number(body.minAtkPct ?? craftAutomation.minAtkPct);
         const minSkillPower = Number(body.minSkillPower ?? craftAutomation.minSkillPower);
         const minHpPct = Number(body.minHpPct ?? craftAutomation.minHpPct);
+        const minDropBonus = Number(body.minDropBonus ?? craftAutomation.minDropBonus);
         const atkEnabled = body.atkEnabled !== false;
         const skillEnabled = body.skillEnabled !== false;
         const hpEnabled = body.hpEnabled === true;
+        const dropEnabled = body.dropEnabled === true;
         const useGotchaTokens = body.useGotchaTokens ?? craftAutomation.useGotchaTokens;
         const storeLockedItems = body.storeLockedItems ?? craftAutomation.storeLockedItems;
         const atkOperator = body.atkOperator === "OR" ? "OR" : "AND";
@@ -1233,8 +1282,11 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
         const hpOperator = body.hpOperator === "OR" ? "OR" : "AND";
         if (!new Set(["gear", "charm", "both"]).has(mode)) throw new Error("Mode must be gear, charm, or both");
         if (levelBand !== "auto" && (!Number.isInteger(Number(levelBand)) || Number(levelBand) < 0 || Number(levelBand) > 9)) throw new Error("Level band must be auto or a valid level band index");
-        if (!Number.isFinite(minAtkPct) || minAtkPct < 0 || !Number.isFinite(minSkillPower) || minSkillPower < 0 || !Number.isFinite(minHpPct) || minHpPct < 0) throw new Error("Thresholds must be non-negative numbers");
-        Object.assign(craftAutomation, { mode, levelBand, minAtkPct, minSkillPower, hpEnabled, atkEnabled, skillEnabled, useGotchaTokens, storeLockedItems, atkOperator, skillOperator, hpOperator });
+        if (!Number.isFinite(minAtkPct) || minAtkPct < 0 || !Number.isFinite(minSkillPower) || minSkillPower < 0 || !Number.isFinite(minHpPct) || minHpPct < 0 || !Number.isFinite(minDropBonus) || minDropBonus < 0) throw new Error("Thresholds must be non-negative numbers");
+        const lockKeptItems = body.lockKeptItems ?? craftAutomation.lockKeptItems;
+        const dropOperator = body.dropOperator === "OR" ? "OR" : "AND";
+        Object.assign(craftAutomation, { mode, levelBand, minAtkPct, minSkillPower, minHpPct, minDropBonus, hpEnabled, dropEnabled, atkEnabled, skillEnabled, useGotchaTokens, storeLockedItems, atkOperator, skillOperator, hpOperator, dropOperator });
+        craftAutomation.lockKeptItems = lockKeptItems;
         response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         response.end(JSON.stringify(craftStatus()));
       } catch (error) {

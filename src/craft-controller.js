@@ -10,6 +10,7 @@ const GOTCHA_CHECK_INTERVAL_MS = 60_000;
 const DEFAULT_MIN_ATK_PCT = 0.90;
 const DEFAULT_MIN_SKILL_POWER = 0.40;
 const DEFAULT_MIN_HP_PCT = 0;
+const DEFAULT_MIN_DROP_BONUS = 0;
 const DEFAULT_ATK_OPERATOR = "AND";
 const DEFAULT_SKILL_OPERATOR = "AND";
 const DEFAULT_HP_OPERATOR = "AND";
@@ -83,11 +84,13 @@ export function craftableGroupCount(snapshot, mode = "gear", thresholds = {}) {
   const minAtkPct = thresholds.minAtkPct ?? DEFAULT_MIN_ATK_PCT;
   const minSkillPower = thresholds.minSkillPower ?? DEFAULT_MIN_SKILL_POWER;
   const minHpPct = thresholds.minHpPct ?? DEFAULT_MIN_HP_PCT;
+  const minDropBonus = thresholds.minDropBonus ?? DEFAULT_MIN_DROP_BONUS;
   const atkEnabled = thresholds.atkEnabled !== false;
   const skillEnabled = thresholds.skillEnabled !== false;
   const atkOperator = thresholds.atkOperator === "OR" ? "OR" : DEFAULT_ATK_OPERATOR;
   const skillOperator = thresholds.skillOperator === "OR" ? "OR" : DEFAULT_SKILL_OPERATOR;
   const hpOperator = thresholds.hpOperator === "OR" ? "OR" : DEFAULT_HP_OPERATOR;
+  const dropOperator = thresholds.dropOperator === "OR" ? "OR" : DEFAULT_HP_OPERATOR;
   const levelBand = thresholds.levelBand === undefined || thresholds.levelBand === "auto" ? null : Number(thresholds.levelBand);
   const equipped = new Set(snapshot.equipped ?? []);
   const groups = new Map();
@@ -97,9 +100,10 @@ export function craftableGroupCount(snapshot, mode = "gear", thresholds = {}) {
     if (mode !== "both" && mode !== itemMode) continue;
     if (itemMode === "charm" && item.baseStats?.includes("dropBonus")) continue;
     const criteria = [
-      ...(atkEnabled ? [{ value: (item.stats?.atkPct ?? 0) > minAtkPct, operator: atkOperator }] : []),
-      ...(skillEnabled ? [{ value: (item.stats?.skillPower ?? 0) > minSkillPower, operator: skillOperator }] : []),
-      ...(thresholds.hpEnabled === true ? [{ value: (item.stats?.hpPct ?? 0) > minHpPct, operator: hpOperator }] : []),
+      ...(atkEnabled ? [{ value: (item.stats?.atkPct ?? 0) >= minAtkPct, operator: atkOperator }] : []),
+      ...(skillEnabled ? [{ value: (item.stats?.skillPower ?? 0) >= minSkillPower, operator: skillOperator }] : []),
+      ...(thresholds.hpEnabled === true ? [{ value: (item.stats?.hpPct ?? 0) >= minHpPct, operator: hpOperator }] : []),
+      ...(thresholds.dropEnabled === true ? [{ value: (item.stats?.dropBonus ?? 0) >= minDropBonus, operator: dropOperator }] : []),
     ];
     const protectedItem = criteria.length > 0 && criteria.slice(1).reduce(
       (result, criterion) => criterion.operator === "OR" ? result || criterion.value : result && criterion.value,
@@ -121,6 +125,51 @@ export function craftableGroupCount(snapshot, mode = "gear", thresholds = {}) {
 export function selectCraftGroup(groups, mode = "gear", preferredMode = mode) {
   return groups.find((group) => group.batches > 0 && (mode !== "both" || group.mode === preferredMode))
     ?? groups.find((group) => group.batches > 0);
+}
+
+export async function lockKeptItems(endpoint = DEFAULT_ENDPOINT, thresholds = {}) {
+  const minAtkPct = Number(thresholds.minAtkPct ?? DEFAULT_MIN_ATK_PCT);
+  const minSkillPower = Number(thresholds.minSkillPower ?? DEFAULT_MIN_SKILL_POWER);
+  const minHpPct = Number(thresholds.minHpPct ?? DEFAULT_MIN_HP_PCT);
+  const minDropBonus = Number(thresholds.minDropBonus ?? DEFAULT_MIN_DROP_BONUS);
+  const atkEnabled = thresholds.atkEnabled !== false;
+  const skillEnabled = thresholds.skillEnabled !== false;
+  const hpEnabled = thresholds.hpEnabled === true;
+  const atkOperator = thresholds.atkOperator === "OR" ? "OR" : DEFAULT_ATK_OPERATOR;
+  const skillOperator = thresholds.skillOperator === "OR" ? "OR" : DEFAULT_SKILL_OPERATOR;
+  const hpOperator = thresholds.hpOperator === "OR" ? "OR" : DEFAULT_HP_OPERATOR;
+  const dropEnabled = thresholds.dropEnabled === true;
+  const dropOperator = thresholds.dropOperator === "OR" ? "OR" : DEFAULT_HP_OPERATOR;
+  return gameAction(`(() => {
+    const debug = window.__battleDebug?.();
+    const state = debug?.state;
+    if (!state) return { ok: false, reason: "battle-state-unavailable", locked: 0 };
+    const equipped = new Set(Object.values(state.monsters ?? {}).flatMap((monster) => (monster.equipment ?? []).map((item) => item.id)));
+    const values = (item) => ({
+      atk: [...(item.opts ?? []), ...(item.enhances ?? [])].filter((entry) => entry?.stat === "atkPct").reduce((total, entry) => total + (entry.value ?? 0), 0),
+      skill: [...(item.opts ?? []), ...(item.enhances ?? [])].filter((entry) => entry?.stat === "skillPower").reduce((total, entry) => total + (entry.value ?? 0), 0),
+      hp: [...(item.opts ?? []), ...(item.enhances ?? [])].filter((entry) => entry?.stat === "hpPct").reduce((total, entry) => total + (entry.value ?? 0), 0),
+      drop: [...(item.opts ?? []), ...(item.enhances ?? [])].filter((entry) => entry?.stat === "dropBonus").reduce((total, entry) => total + (entry.value ?? 0), 0),
+    });
+    const qualifies = (item) => {
+      if (item.part === "charm" || item.locked || equipped.has(item.id)) return false;
+      const value = values(item);
+      const criteria = [
+        ...(${atkEnabled} ? [{ value: value.atk >= ${minAtkPct}, operator: ${JSON.stringify(atkOperator)} }] : []),
+        ...(${skillEnabled} ? [{ value: value.skill >= ${minSkillPower}, operator: ${JSON.stringify(skillOperator)} }] : []),
+        ...(${hpEnabled} ? [{ value: value.hp >= ${minHpPct}, operator: ${JSON.stringify(hpOperator)} }] : []),
+        ...(${dropEnabled} ? [{ value: value.drop >= ${minDropBonus}, operator: ${JSON.stringify(dropOperator)} }] : []),
+      ];
+      return criteria.length > 0 && criteria.slice(1).reduce((result, criterion) => criterion.operator === "OR" ? result || criterion.value : result && criterion.value, criteria[0].value);
+    };
+    const candidates = [...(state.items ?? []), ...(state.storage ?? [])].filter(qualifies);
+    for (const item of candidates) item.locked = true;
+    if (candidates.length) {
+      localStorage.setItem("taskbar-idle-rpg-save", JSON.stringify(state));
+      debug.renderHud?.();
+    }
+    return { ok: true, locked: candidates.length, ids: candidates.map((item) => item.id) };
+  })()`, endpoint);
 }
 
 async function gameAction(expression, endpoint) {
@@ -368,7 +417,7 @@ const CRAFT_MAINTENANCE = (useGotchaTokens, storeLockedItems) => `(async () => {
   return { ok: !reason, used, stored, reason, trace };
 })()`;
 
-export async function runCraftController({ endpoint = DEFAULT_ENDPOINT, maxRuns = 1, mode = "gear", levelBand = DEFAULT_LEVEL_BAND, confirm = false, loop = false, minAtkPct = DEFAULT_MIN_ATK_PCT, minSkillPower = DEFAULT_MIN_SKILL_POWER, minHpPct = DEFAULT_MIN_HP_PCT, atkEnabled = true, skillEnabled = true, hpEnabled = false, atkOperator = DEFAULT_ATK_OPERATOR, skillOperator = DEFAULT_SKILL_OPERATOR, hpOperator = DEFAULT_HP_OPERATOR, useGotchaTokens = false, storeLockedItems = false, log = console.log, signal } = {}) {
+export async function runCraftController({ endpoint = DEFAULT_ENDPOINT, maxRuns = 1, mode = "gear", levelBand = DEFAULT_LEVEL_BAND, confirm = false, loop = false, minAtkPct = DEFAULT_MIN_ATK_PCT, minSkillPower = DEFAULT_MIN_SKILL_POWER, minHpPct = DEFAULT_MIN_HP_PCT, minDropBonus = DEFAULT_MIN_DROP_BONUS, atkEnabled = true, skillEnabled = true, hpEnabled = false, dropEnabled = false, atkOperator = DEFAULT_ATK_OPERATOR, skillOperator = DEFAULT_SKILL_OPERATOR, hpOperator = DEFAULT_HP_OPERATOR, dropOperator = DEFAULT_HP_OPERATOR, useGotchaTokens = false, storeLockedItems = false, lockKeptItems: lockKept = true, log = console.log, signal } = {}) {
   if (!confirm) throw new Error("Craft automation changes game state; rerun with --confirm to enable it");
   if (!Number.isInteger(maxRuns) || maxRuns < 1) throw new Error("maxRuns must be a positive integer");
   if (!new Set(["gear", "charm", "both"]).has(mode)) throw new Error("mode must be gear, charm, or both");
@@ -379,6 +428,11 @@ export async function runCraftController({ endpoint = DEFAULT_ENDPOINT, maxRuns 
   let preferredMode = mode === "both" ? "charm" : mode;
   let lastGotchaTokenCheckAt = 0;
   for (let run = 0; (loop || run < maxRuns) && !signal?.aborted; run += 1) {
+    if (lockKept) {
+      const locked = await lockKeptItems(endpoint, { minAtkPct, minSkillPower, minHpPct, minDropBonus, atkEnabled, skillEnabled, hpEnabled, dropEnabled, atkOperator, skillOperator, hpOperator, dropOperator });
+      if (!locked?.ok) throw new Error(locked?.reason ?? "Unable to lock kept items");
+      if (locked.locked > 0) log(`Locked ${locked.locked} kept item${locked.locked === 1 ? "" : "s"}`);
+    }
     let chests = { ok: true, opened: 0, remaining: 0 };
     if (mode !== "charm") {
       chests = await gameAction(OPEN_PENDING_CHESTS, endpoint);
@@ -395,7 +449,7 @@ export async function runCraftController({ endpoint = DEFAULT_ENDPOINT, maxRuns 
       if (chests.opened > 0) log(`Opened ${chests.opened} pending chests`);
     }
     let before = await evaluateRuntime(SNAPSHOT, endpoint);
-    const thresholds = { minAtkPct, minSkillPower, minHpPct, atkEnabled, skillEnabled, hpEnabled, atkOperator, skillOperator, hpOperator, levelBand };
+    const thresholds = { minAtkPct, minSkillPower, minHpPct, minDropBonus, atkEnabled, skillEnabled, hpEnabled, dropEnabled, atkOperator, skillOperator, hpOperator, dropOperator, levelBand };
     let groups = craftableGroupCount(before, mode, thresholds);
     let group = selectCraftGroup(groups, mode, preferredMode);
     let includeStorage = false;
