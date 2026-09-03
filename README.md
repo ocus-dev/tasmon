@@ -1,137 +1,185 @@
 # TASMON Analyzer
 
-A local, read-only analyzer for the installed TASMON game.
+Local tools for inspecting, measuring, and automating the installed TASMON game.
+
+The project reads the game's ASAR archive and can connect to a running game through its local Chrome DevTools Protocol (CDP) port. Analysis commands are read-only. Crafting, awakening, etching, and dashboard automation use the game's existing controls and can change the live save.
 
 ## Requirements
 
+- Windows with TASMON installed
 - Node.js 22 or newer
-- A TASMON installation at the sibling directory documented in `context.md`
+- The project directory next to the TASMON installation's `resources` directory
 
-## Commands
+The expected layout is:
 
-From this directory:
+```text
+Taskbar Monsters/
+  TaskbarMonsters.exe
+  resources/app.asar
+  info_project/
+```
+
+The default archive path is `..\resources\app.asar` relative to this project. See [context.md](context.md) for more background about the game layout and save format.
+
+## Quick Start
+
+Open PowerShell in this directory, then install dependencies if the project has them:
+
+```powershell
+npm install
+```
+
+Run the checks:
 
 ```powershell
 npm run check
 npm test
-npm start -- list 'src/game/(battle|data|equipment|state)\.js$'
-npm start -- extract /src/game/battle.js extracted/battle.js
-npm start -- inspect-save path\to\save.json
-npm start -- party-attack path\to\save.json
-npm start -- simulate-kpm path\to\save.json 1 9 --target-kpm 600 --party-attack 100000 --attacks-per-sec 2
-npm start -- simulate-kpm --live 3 9 --target-kpm 600
+```
+
+To inspect an exported save without starting the game:
+
+```powershell
+npm start -- inspect-save save.json
+```
+
+To start the live dashboard:
+
+1. Close TASMON if it is already running.
+2. Launch it with a local CDP port:
+
+   ```powershell
+   & "..\TaskbarMonsters.exe" --remote-debugging-port=9222
+   ```
+
+3. Start the dashboard:
+
+   ```powershell
+   npm start -- live
+   ```
+
+4. Open [http://127.0.0.1:4173](http://127.0.0.1:4173).
+
+The dashboard samples live battle state once per second. Its Battle rates, Egg drops, Skills, Awakenings, Etching, and Automation tabs are available from the navigation bar.
+
+## Export A Save
+
+With TASMON running on CDP port `9222`:
+
+```powershell
 npm start -- export-save save.json
+```
+
+To export the backup save instead:
+
+```powershell
+npm start -- export-save backup.json 9222 backup
+```
+
+The exporter reads Chromium Local Storage through CDP. It does not write to the game profile.
+
+## Common Commands
+
+All commands are run from `info_project`.
+
+### Inspect and calculate
+
+```powershell
+# List matching files in the game archive
+npm start -- list 'src/game/(battle|data|equipment|state)\.js$'
+
+# Extract one archive file into this project
+npm start -- extract /src/game/battle.js extracted/battle.js
+
+# Resolve the active party's attack from an exported save
+npm start -- party-attack save.json
+
+# Estimate the KPM required by a stage
+npm start -- simulate-kpm save.json 1 9 --target-kpm 600
+
+# Read the live battle state instead of a save file
+npm start -- simulate-kpm --live 3 9 --target-kpm 600
+
+# Generate a standalone HTML calculation report
 npm start -- render-report save.json report.html
-npm start -- live
-npm start -- turbo
-npm start -- craft 1 9222 gear --confirm
-npm start -- craft 1 9222 gear --confirm --level-band 100-115
-npm start -- craft 1 9222 both --confirm --min-atk-pct 0.9 --min-skill-power 0.4
+
+# Start the read-only constellation viewer
 npm start -- constellation
 ```
 
-## Turbo Loop
+The constellation viewer is available at [http://127.0.0.1:4180](http://127.0.0.1:4180).
 
-With the live dashboard running, post to its turbo endpoint immediately and then every 10 seconds:
+### Crafting
 
-```powershell
-npm start -- turbo
-```
-
-Pass a different endpoint as the optional argument when needed:
+Crafting requires explicit `--confirm` because it changes the live game:
 
 ```powershell
-npm start -- turbo http://127.0.0.1:4173/api/turbo
+npm start -- craft 5 9222 gear --confirm
+npm start -- craft 5 9222 charm --confirm
+npm start -- craft 5 9222 both --confirm
 ```
 
-`simulate-kpm` uses difficulty index `1` for Nightmare and stage `9` for 10-9. It reports the enemy HP, required damage per second, basic-attack-only KPM, scheduled offensive skills, and a wave-aware KPM estimate. The wave estimate applies cooldowns, initial skill delays, crits, dex attack bonus, AOE conversion, native AOE, single-target overkill rules, and the 450ms wave respawn delay. `skillInclusiveKpm` is only an optimistic DPS upper bound. `--live` reads the current in-memory battle state through CDP, avoiding a stale exported save. Use `--aoe-damage` and `--aoe-cooldown` to test an additional AOE cast.
-
-
-To generate report for active party:
-```powershell
-node src/cli.js render-report save.json report_3.html
-node src/cli.js render-report save.json report_3.html
-```
-
-
-The default archive is:
-
-```text
-..\resources\app.asar
-```
-
-The analyzer reads the ASAR index and selected files directly. It does not unpack or modify the game archive.
-
-## Exporting The Live Save
-
-Close TASMON, then launch it with a local DevTools port:
+Useful options include:
 
 ```powershell
-& "..\TaskbarMonsters.exe" --remote-debugging-port=9222
+# Repeat every 10 seconds until the controller stops safely
+npm start -- craft 1 9222 gear --confirm --loop
+
+# Restrict materials to a level band
+npm start -- craft 1 9222 gear --confirm --level-band 100-115
+
+# Change preservation thresholds (decimal fractions)
+npm start -- craft 1 9222 gear --confirm --min-atk-pct 0.9 --min-skill-power 0.4
 ```
 
-With the game running, export the save into this project:
+The controller only uses safe groups of nine unlocked, unequipped items. It protects favorites, party members, expedition monsters, and preserved high-quality gear according to the configured thresholds.
+
+## Dashboard Automation
+
+The dashboard can drive the game's existing UI through CDP:
+
+- Auto crafting
+- Egg opening and awakening/duplicate cleanup
+- High-rarity leveling
+- Etching helper
+- Repeated Farm this stage sequences
+
+These features are opt-in. Review the selected targets and settings before enabling them. The awakening automation frequency is user-configurable. The farm sequence defaults to four non-boss targets with 500 ms gaps and can optionally include the boss level with its explicit checkbox.
+
+Automation is not a replacement for a save backup. Export a save before using any feature that consumes items or changes the game state.
+
+## How It Works
+
+- `src/cli.js` provides the command-line interface.
+- `src/cdp.js` provides the local CDP bridge.
+- `src/live.js` runs the live dashboard server and coordinates live input operations.
+- `dashboard/index.html` contains the dashboard UI.
+- `src/damage-model.js`, `src/real-stats.js`, and `src/simulate-kpm.js` implement analysis and estimates.
+- `.runtime/` contains the game definitions used for calculations.
+- `extracted/` contains selected archive files used for reference and comparison.
+
+The project does not unpack or modify the game archive. Reference files under `extracted/` and `.runtime/` do not automatically change the packaged executable.
+
+## Safety And Privacy
+
+- CDP is configured for local use by default at `127.0.0.1:9222`.
+- The dashboard binds to `127.0.0.1` by default.
+- `--lan` and `--host` expose the dashboard beyond localhost; use them only on a trusted network.
+- Exported saves can contain your game progress. Treat `save.json`, `save-live.json`, and backup files as private.
+- Do not run state-changing commands without a current backup and an understanding of the selected options.
+
+## Documentation
+
+- [context.md](context.md): game layout, save format, and confirmed formula notes
+- [farm-loop-handoff.md](farm-loop-handoff.md): Farm sequence research and safe continuation notes
+- [turbo_research.md](turbo_research.md): historical timing research and experiments
+
+## Development
+
+Run the full local validation suite before submitting changes:
 
 ```powershell
-node src/cli.js export-save save.json
+npm run check
+npm test
 ```
 
-The exporter reads `localStorage["taskbar-idle-rpg-save"]` through the local DevTools connection. It does not write to localStorage or the game profile. Use `backup` as the third argument to export the backup key instead:
-
-```powershell
-node src/cli.js export-save backup.json 9222 backup
-```
-
-## Craft Controller
-
-The craft controller is separate from the read-only analyzer. It connects to the running game through the local DevTools port and clicks the game's existing Compound, Auto-fill, and Craft controls. The game remains responsible for item validation, success rolls, inventory changes, cube XP, and saving.
-
-It requires explicit confirmation:
-
-```powershell
-node src/cli.js craft 5 9222 gear --confirm
-node src/cli.js craft 5 9222 charm --confirm
-node src/cli.js craft 5 9222 both --confirm
-node src/cli.js craft 1 9222 gear --confirm --loop
-```
-
-Before each run it reads the live debug state, requires a safe group of nine unlocked, unequipped items, and reports an explicit `exitReason` when it stops. If the active inventory has no safe batch, it checks storage and enables the game's existing `Include storage items` control when a safe storage-backed batch is available. `both` mode chooses between eligible gear and charm batches, keeping the lanes separate. Immortal gear is eligible unless its combined `atkPct` is greater than `0.90` and its combined `skillPower` is greater than `0.40`; those values are summed from the item's `opts` and `enhances` arrays and are preserved from crafting. Override the defaults with `--min-atk-pct` and `--min-skill-power` (values are decimal fractions, so 90% is `0.9`). Gear-capable modes batch-open all pending common, rare, and boss chests through the game's existing chest API at the start of every iteration, including when no safe craft group exists, and checks again after a verified gear craft. Without `--confirm`, it refuses to run because crafting changes the live game state.
-The controller supports the game's current level bands through `125`, including `100-115`. By default it selects the best available band automatically; pass `--level-band 100-115` to restrict materials to that band. The live dashboard exposes the same choice under `Item level band`.
-
-Add `--loop` to repeat verified crafts every 10 seconds. The loop stops when no safe nine-item group remains or any controller check fails. Press `Ctrl+C` to stop it manually.
-
-## Live Battle Dashboard
-
-With TASMON running on its local DevTools port, start the read-only dashboard:
-
-```powershell
-node src/cli.js live
-```
-
-Open `http://127.0.0.1:4173`. The dashboard samples a narrow projection from `window.__battleDebug()` once per second through CDP. It reports gross battle gold per minute, net gold per minute, party experience per minute, kills per minute, estimated chests per minute, the uncapped summed party `chestBonus`, current stage, and current party progress. The `Egg drops` tab records newly observed egg IDs and rarities for the dashboard session, with rarity percentages, a newest-first timeline, eggs/hour, average interval, and best/common rarity highlights. Estimated chests per minute is the kill rate multiplied by the current effective normal chest-drop chance; it does not modify live state. Gross gold counts positive gold changes; net gold also includes spending. The dashboard binds to localhost and does not modify the game archive, renderer code, Local Storage, or save data.
-
-The `Awakenings` tab groups duplicate monsters by species. Choose the monster to keep, then compare two plans: `Safe path` uses low-value same-species copies for guaranteed stages, while `Cheapest path` spends low-cost non-safe fodder on earlier chance rolls and preserves same-species copies for later guaranteed stages. `Use this plan` applies either recommendation to the existing batch selection, which can still be adjusted manually. Favorites, party members, and expedition monsters are protected. The dashboard drives the game's existing Compound/Awakening UI through CDP, so the game remains responsible for validation, consumption, RNG, saving, and inventory redraw. The read-only inventory projection is available at `GET /api/awakenings`; confirmed actions use `POST /api/awaken` with `{ "targetId": "...", "foodIds": ["..."] }`.
-
-## Constellation Viewer
-
-Start the read-only perk board viewer with:
-
-```powershell
-node src/cli.js constellation
-```
-
-Open `http://127.0.0.1:4180`. Select a party member to overlay activated nodes and inspect aggregate Attack, HP, and secondary perk bonuses from the exported `save.json`.
-
-## Current Scope
-
-- ASAR file indexing and selective extraction
-- Read-only validation and summary of exported save JSON
-- Real party attack and maximum HP resolution using the installed game definitions
-- Standalone HTML attack, maximum HP, and skill calculation report
-- Pure normal-attack and skill-damage calculations
-- Tests for the confirmed damage formula
-- Documentation of Raise and breeding skill inheritance rules
-
-The report's maximum HP section shows the party total and each member's breakdown. It uses the installed game's HP formula: `round((base HP x level growth x HP IV x rarity x passive x awakening x job x pinnacle x equipment HP% x perk x breeding x collection) + equipment flat HP)`. The skill section shows each equipped skill's neutral single-target baseline. It includes attack, skill power, equipment/perk/job skill-power bonuses, and cooldown. Element matchup, role matchup, boss/trial modifiers, buffs, and critical state are shown as formula factors but are not assumed in the neutral baseline.
-
-Skill inheritance rules are documented in the `context.md` section `Skill Inheritance: Raise vs. Breeding`. In short, Raise (feeding a departing Tasmon to a Growing Tasmon) can transfer one eligible skill only when the target has an open learned-skill slot. The full list of exclusions and the separate breeding rules are described there.
+Tests use Node's built-in test runner. Do not commit generated logs, exported saves, or dashboard screenshots unless they are intentionally part of the change.

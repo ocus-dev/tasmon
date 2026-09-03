@@ -1339,7 +1339,9 @@ export async function startLiveDashboard({ host = "127.0.0.1", port = 4173, endp
     }
     if (pathname === "/api/farm-sequence" && request.method === "POST") {
       try {
-        const execution = await inputServices.farmLoop.run("sequence", () => farmLoopSequenceExpression(endpoint));
+        const body = await readRequestBody(request);
+        const includeBoss = body.includeBoss === true;
+        const execution = await inputServices.farmLoop.run("sequence", () => farmLoopSequenceExpression(endpoint, includeBoss));
         if (!execution.accepted) {
           response.writeHead(409, { "content-type": "application/json; charset=utf-8" });
           response.end(JSON.stringify({ error: "input-busy", blockers: execution.blockers }));
@@ -2038,7 +2040,7 @@ async function setTurboExperimental(enabled, verbose, endpoint) {
   })()`, endpoint);
 }
 
-function farmLoopSequenceExpression(endpoint) {
+function farmLoopSequenceExpression(endpoint, includeBoss = false) {
   return evaluateRuntime(`(async () => {
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const mapTab = document.querySelector('.bar-tab[data-win="map"]')
@@ -2047,7 +2049,7 @@ function farmLoopSequenceExpression(endpoint) {
     if (!labels.length && mapTab) { mapTab.click(); await sleep(250); labels = [...document.querySelectorAll('.portal-node-label')]; }
     const farmLabels = labels.filter((label) => {
       const node = label.previousElementSibling;
-      return node && !node.classList.contains("locked") && !label.textContent.includes("[10-10]");
+      return node && !node.classList.contains("locked") && (${Boolean(includeBoss)} || !label.textContent.includes("[10-10]"));
     });
     const results = [];
     for (let index = 0; index < 4; index += 1) {
@@ -2059,6 +2061,6 @@ function farmLoopSequenceExpression(endpoint) {
       results.push({ result: wasOn ? "already-farming" : "farm-enabled", label: label.textContent.trim() });
       if (index < 3) await sleep(500);
     }
-    return { results, stage: window.__battleDebug?.()?.state?.stage ?? null };
+    return { results, stage: window.__battleDebug?.()?.state?.stage ?? null, includeBoss: ${Boolean(includeBoss)} };
   })()`, endpoint, { awaitPromise: true });
 }

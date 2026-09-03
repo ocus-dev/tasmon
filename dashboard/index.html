@@ -27,8 +27,6 @@
     .section-head .label{background:var(--blue-deep);border:2px solid var(--line);border-radius:999px;padding:5px 24px;color:var(--cream)}
     .rarity-card{border-width:2px;background:linear-gradient(145deg,#fffdf0,var(--panel2));box-shadow:0 3px 0 rgba(4,32,65,.5)}.egg-table,.table,.caps{border:3px solid var(--line);background:var(--cream);box-shadow:var(--shadow)}.egg-row,.row{background:#b6cee0}.egg-row>*,.row>*{background:var(--cream)}.egg-row.head,.row.head{color:var(--blue-deep)}
     .skill-tab{color:var(--cream);text-shadow:1px 1px 0 var(--line)}.skill-tab:hover,.skill-tab.active{color:var(--blue-deep);text-shadow:none}.skill-description{cursor:help;text-decoration:underline dotted var(--green);text-underline-offset:3px}
-    .turbo-active{background:var(--red)!important;color:#fff!important;border-color:#7d1f1f!important}
-    .turbo-console{margin-top:16px;border:2px solid var(--line);background:#071b2d;color:#9ee7b2;padding:14px;min-height:180px;max-height:360px;overflow:auto;font:12px/1.5 Consolas,monospace;white-space:pre-wrap}
     .awaken-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:end}.awaken-controls label{display:flex;flex-direction:column;gap:4px;color:var(--muted);font:700 11px Consolas,monospace;text-transform:uppercase}.awaken-controls select{min-width:240px;border:2px solid var(--line);background:var(--cream);color:var(--ink);padding:9px}.awaken-summary{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:16px}.awaken-summary article{border:2px solid var(--line);background:linear-gradient(145deg,#fffdf0,var(--panel2));padding:14px}.awaken-summary strong{display:block;color:var(--blue-deep);font:700 1.5rem Consolas,monospace}.awaken-summary span{color:var(--muted);font-size:12px}.awaken-table{margin-top:16px}.awaken-note{color:var(--muted);font-size:13px}.awaken-empty{border:2px dashed var(--line);padding:18px;color:var(--muted);background:var(--panel)}
     .awaken-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin-top:16px}.awaken-group{border:2px solid var(--line);background:var(--cream);padding:12px;cursor:pointer;text-align:left}.awaken-group.active{border-color:var(--green);box-shadow:0 0 0 3px rgba(47,154,86,.25)}.awaken-group strong{display:block;color:var(--blue-deep)}.awaken-group span{color:var(--muted);font:11px Consolas,monospace}.awaken-mons{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin-top:14px}.awaken-mon{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--cream);padding:10px;min-width:0}.awaken-mon input{width:18px;height:18px;accent-color:var(--green)}.awaken-mon.target{border-color:var(--amber)}.awaken-mon.disabled{opacity:.48}.awaken-mon-copy{min-width:0;flex:1}.awaken-mon-copy strong,.awaken-mon-copy span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.awaken-mon-copy span{color:var(--muted);font:11px Consolas,monospace}.awaken-badge{font:10px Consolas,monospace;color:var(--amber)}.awaken-batch-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:14px}.awaken-batch-actions .button:disabled{opacity:.5;cursor:not-allowed}.awaken-result{margin-top:12px;color:var(--green);font-weight:700}.awaken-result.error{color:var(--red)}
     .awaken-plan-tabs{display:flex;gap:4px;margin-top:18px;border-bottom:2px solid var(--line)}.awaken-plan-tab{border:2px solid transparent;border-bottom:0;background:transparent;color:var(--muted);padding:9px 13px;cursor:pointer;font:700 11px Consolas,monospace}.awaken-plan-tab.active{background:var(--cream);border-color:var(--line);color:var(--blue-deep)}.awaken-plan{border:2px solid var(--line);border-top:0;background:var(--cream);padding:14px}.awaken-plan-head{display:flex;justify-content:space-between;align-items:center;gap:12px}.awaken-plan-head strong{color:var(--blue-deep)}.awaken-plan-head span,.awaken-plan-note{color:var(--muted);font-size:12px}.awaken-plan-goals{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.awaken-plan-goals label{display:flex;align-items:center;gap:5px;border:1px solid var(--line);background:var(--panel2);padding:6px 9px;color:var(--blue-deep);font:700 11px Consolas,monospace}.awaken-plan-goals input{accent-color:var(--green)}.awaken-plan-steps{display:grid;gap:6px;margin:12px 0}.awaken-plan-step{display:grid;grid-template-columns:70px 1fr auto;gap:8px;align-items:center;border-left:4px solid var(--green);background:var(--panel2);padding:8px 10px}.awaken-plan-step.chance{border-left-color:var(--amber)}.awaken-plan-step b{font:700 11px Consolas,monospace;color:var(--blue-deep);text-transform:uppercase}.awaken-plan-step span{min-width:0}.awaken-plan-step em{font-style:normal;color:var(--muted);font:11px Consolas,monospace}.awaken-plan-empty{color:var(--muted);padding:8px 0}.awaken-plan .button{margin-top:4px}
@@ -36,7 +34,7 @@
     .egg-automation{display:flex;flex-wrap:wrap;align-items:center;gap:14px;border:2px solid var(--line);background:linear-gradient(145deg,#fffdf0,var(--panel2));padding:14px;box-shadow:var(--shadow)}.egg-automation label{display:flex;align-items:center;gap:7px;color:var(--blue-deep);font-weight:800}.egg-automation input{width:18px;height:18px;accent-color:var(--green)}.egg-automation input[type=number]{width:76px;height:36px;padding:6px 8px;border:2px solid var(--line);background:var(--cream);color:var(--ink);font:700 14px Consolas,monospace;accent-color:auto}.egg-automation-status{color:var(--muted);font:11px Consolas,monospace;flex:1;min-width:220px}
     .automation-controls{border:2px solid var(--line);background:linear-gradient(145deg,#fffdf0,var(--panel2));padding:16px;box-shadow:var(--shadow)}.automation-controls label{display:flex;flex-direction:column;gap:4px;color:var(--blue-deep);font:700 11px Consolas,monospace;text-transform:uppercase}.automation-controls select,.automation-controls input[type=number]{border:2px solid var(--line);background:var(--cream);color:var(--ink);padding:8px;min-width:130px}.automation-status{margin-top:12px;color:var(--muted);font:12px Consolas,monospace}.automation-log{margin-top:12px;min-height:150px;max-height:300px;overflow:auto;border:2px solid var(--line);background:#071b2d;color:#9ee7b2;padding:14px;white-space:pre-wrap;font:12px/1.5 Consolas,monospace}.craft-settings-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:14px}.craft-settings-head strong{color:var(--blue-deep);font-size:16px}.craft-settings-head span{color:var(--muted);font-size:12px}.craft-rules{display:grid;gap:8px}.craft-rule{display:grid;grid-template-columns:minmax(150px,1fr) minmax(150px,auto) 110px;align-items:center;gap:14px;border:1px solid var(--line);background:var(--cream);padding:10px 12px}.craft-rule-name{display:flex!important;flex-direction:row!important;align-items:center;gap:8px;font-size:12px!important}.craft-rule-name input{width:17px;height:17px;accent-color:var(--green)}.craft-rule-threshold{display:flex!important;flex-direction:row!important;align-items:center;gap:7px;font-size:11px!important}.craft-rule-threshold input{width:110px}.craft-rule-threshold span{color:var(--muted);font:700 12px Consolas,monospace}.craft-rule-operator{font-size:11px!important}.craft-rule-operator select{min-width:100px}.craft-rule-disabled{opacity:.48}.craft-options{display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin-top:14px}.craft-options label{display:flex;flex-direction:column;gap:4px;color:var(--blue-deep);font:700 11px Consolas,monospace;text-transform:uppercase}.craft-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:16px}.craft-actions .button{min-width:130px}.craft-actions .button:disabled{opacity:.5;cursor:not-allowed}.craft-actions .automation-status{margin:0;flex:1;min-width:220px}
     .automation-controls{border:2px solid var(--line);background:linear-gradient(145deg,#fffdf0,var(--panel2));padding:16px;box-shadow:var(--shadow)}.automation-controls label{display:flex;flex-direction:column;gap:4px;color:var(--blue-deep);font:700 11px Consolas,monospace;text-transform:uppercase}.automation-controls select,.automation-controls input[type=number]{border:2px solid var(--line);background:var(--cream);color:var(--ink);padding:8px;min-width:130px}.automation-status{margin-top:12px;color:var(--muted);font:12px Consolas,monospace}.automation-log{margin-top:12px;min-height:150px;max-height:300px;overflow:auto;border:2px solid var(--line);background:#071b2d;color:#9ee7b2;padding:14px;white-space:pre-wrap;font:12px/1.5 Consolas,monospace}.craft-widget{border:2px solid var(--line);background:var(--panel2);box-shadow:var(--shadow)}.craft-widget summary{padding:13px 16px;color:var(--blue-deep);font-weight:800;cursor:pointer;list-style-position:inside}.craft-widget summary::marker{color:var(--green)}.craft-settings-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:14px}.craft-settings-head strong{color:var(--blue-deep);font-size:16px}.craft-settings-head span{color:var(--muted);font-size:12px}.craft-rules{display:grid;gap:8px}.craft-rule{display:grid;grid-template-columns:minmax(150px,1fr) minmax(150px,auto) 110px;align-items:center;gap:14px;border:1px solid var(--line);background:var(--cream);padding:10px 12px}.craft-rule-name{display:flex!important;flex-direction:row!important;align-items:center;gap:8px;font-size:12px!important}.craft-rule-name input{width:17px;height:17px;accent-color:var(--green)}.craft-rule-threshold{display:flex!important;flex-direction:row!important;align-items:center;gap:7px;font-size:11px!important}.craft-rule-threshold input{width:110px}.craft-rule-threshold span{color:var(--muted);font:700 12px Consolas,monospace}.craft-rule-operator{font-size:11px!important}.craft-rule-operator select{min-width:100px}.craft-rule-disabled{opacity:.48}.craft-options{display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin-top:14px}.craft-options label{display:flex;flex-direction:column;gap:4px;color:var(--blue-deep);font:700 11px Consolas,monospace;text-transform:uppercase}.craft-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:16px}.craft-actions .button{min-width:130px}.craft-actions .button:disabled{opacity:.5;cursor:not-allowed}.craft-actions .automation-status{margin:0;flex:1;min-width:220px}
-    .ultra-debug{margin-top:12px;min-height:180px;max-height:380px;overflow:auto;border:2px solid var(--line);background:#071b2d;color:#9ee7b2;padding:14px;white-space:pre-wrap;font:12px/1.5 Consolas,monospace}.turbo-console,.automation-log,.ultra-debug{user-select:text;-webkit-user-select:text;cursor:text}
+    .ultra-debug{margin-top:12px;min-height:180px;max-height:380px;overflow:auto;border:2px solid var(--line);background:#071b2d;color:#9ee7b2;padding:14px;white-space:pre-wrap}.automation-log,.ultra-debug{user-select:text;-webkit-user-select:text;cursor:text}
     @media(max-width:760px){.craft-settings-head{display:block}.craft-settings-head span{display:block;margin-top:4px}.craft-rule{grid-template-columns:1fr}.craft-rule-threshold{justify-content:space-between}.craft-rule-operator select{width:100%}}
     .etch-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:end;border:2px solid var(--line);background:linear-gradient(145deg,#fffdf0,var(--panel2));padding:14px;box-shadow:var(--shadow)}.etch-controls label{display:flex;flex-direction:column;gap:4px;color:var(--blue-deep);font:700 11px Consolas,monospace;text-transform:uppercase}.etch-controls select{min-width:170px;border:2px solid var(--line);background:var(--cream);color:var(--ink);padding:8px}.etch-item-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:9px;margin-top:14px}.etch-item{border:2px solid var(--line);background:var(--cream);padding:11px;text-align:left;cursor:pointer;color:var(--ink)}.etch-item.selected{border-color:var(--green);box-shadow:0 0 0 3px rgba(47,154,86,.25)}.etch-item strong,.etch-item span{display:block}.etch-item span,.etch-slot small{color:var(--muted);font:11px Consolas,monospace}.etch-slots,.etch-pool{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin-top:12px}.etch-slot{border:1px solid var(--line);background:var(--panel2);padding:10px;text-align:left;cursor:pointer}.etch-slot.selected{border:2px solid var(--amber)}.etch-slot b{display:block;color:var(--blue-deep)}.etch-log{margin-top:12px;min-height:100px;max-height:240px;overflow:auto;border:2px solid var(--line);background:#071b2d;color:#9ee7b2;padding:14px;white-space:pre-wrap;font:12px/1.5 Consolas,monospace}
     .syslog{margin-top:12px;min-height:180px;max-height:360px;overflow:auto;border:2px solid var(--line);background:#071b2d;color:#9ee7b2;padding:14px;white-space:pre-wrap;font:12px/1.5 Consolas,monospace}.etch-skill-stop{display:flex;align-items:center;gap:7px;margin-top:12px;color:var(--blue-deep);font-weight:800}.etch-skill-stop input{width:18px;height:18px;accent-color:var(--green)}
@@ -49,7 +47,7 @@
       <div class="status" id="status"><span class="status-dot"></span><small>CONNECTING</small></div>
     </header>
     <div class="actions"><div class="meta"><span id="stage">Stage --</span><span id="wave">Wave --</span><span id="session">Session --</span><span id="total">Total --</span><span id="elapsed">Elapsed --</span></div><div><button class="button" id="reset" type="button">Reset session</button></div></div>
-    <nav class="tabs" aria-label="Dashboard views"><button class="tab active" data-tab="ratesPanel">Battle rates</button><button class="tab" data-tab="eggsPanel">Egg drops</button><button class="tab" data-tab="skillsPanel">Skills</button><button class="tab" data-tab="awakeningsPanel">Awakenings</button><button class="tab" data-tab="etchingPanel">Etching</button><button class="tab" data-tab="turboPanel">Turbo</button><button class="tab" data-tab="automationPanel">Automation</button></nav>
+    <nav class="tabs" aria-label="Dashboard views"><button class="tab active" data-tab="ratesPanel">Battle rates</button><button class="tab" data-tab="eggsPanel">Egg drops</button><button class="tab" data-tab="skillsPanel">Skills</button><button class="tab" data-tab="awakeningsPanel">Awakenings</button><button class="tab" data-tab="etchingPanel">Etching</button><button class="tab" data-tab="automationPanel">Automation</button></nav>
     <div id="skillsPanel" class="tab-panel"><section class="section"><div class="section-head"><div class="label">Skill reference</div><div class="note">Browse by skill type</div></div><div id="skillRollReference"></div><div id="skillTabs" class="skill-tabs"></div><div id="skillsContent"></div><p class="note skill-disclaimer">The listed signature species is the skill's natural owner, not its exclusive owner. Signature skills are excluded from the standard level-milestone pool, but higher-star signature skills can appear in the rare-choice slot and can also be inherited through breeding.</p></section></div>
     <div id="ratesPanel" class="tab-panel active">
     <section class="cards">
@@ -98,20 +96,13 @@
         <div class="actions"><span class="meta" id="etchStatus">Choose an item, modifier, and slot.</span><div><button class="button" id="etchStart" type="button" disabled>Start rolling</button> <button class="button" id="etchStop" type="button">Stop</button></div></div><label class="etch-skill-stop"><input id="etchStopOnSkill" type="checkbox"> Stop on any skill roll</label><pre class="etch-log" id="etchLog" tabindex="0">Etching helper waiting.</pre>
       </section>
     </div>
-    <div id="turboPanel" class="tab-panel">
-      <section class="section"><div class="section-head"><div class="label">Turbo reproduction</div><div class="note">Each pulse adds one timer layer</div></div>
-        <p class="awaken-note">Turbo rotates through 10-7 → 10-10 boss, 10-8 → 10-10 boss, and 10-9 → 10-10 boss. It selects 10-9 normally without the lap button, then uses the boss lap on 10-10. Each pulse adds one extra deferred wave callback layer.</p>
-        <div class="actions"><div class="meta"><span id="turboPhase">Phase --</span><span id="turboStack">Layers --</span><span id="turboKeys">Keys --</span><label class="turbo-target-control">Target KPM <input id="turboTargetKpm" type="number" min="1" step="1" value="1000" inputmode="numeric"></label><label><input id="turboExperimental" type="checkbox"> Experimental</label><label><input id="turboVerbose" type="checkbox"> Verbose</label></div><div><button class="button turbo" id="turboPulse" type="button">Start Turbo</button> <button class="button" id="turboStop" type="button">Stop</button> <button class="button" id="turboExperimentReset" type="button">Restart game for experiment</button></div></div>
-        <pre class="turbo-console" id="turboConsole" tabindex="0">Turbo console waiting.</pre>
-      </section>
-    </div>
     <div id="automationPanel" class="tab-panel">
       <section class="section"><div class="section-head"><div class="label">Auto crafting</div><div class="note">Runs continuously until stopped</div></div>
         <details class="craft-widget" open><summary id="craftSummary">Keep: Attack 90% AND Skill 40%</summary><div class="automation-controls"><div class="craft-settings-head"><strong>Keep an item when...</strong><span>Rows combine from top to bottom. Jewelry with egg drop as its base stat is always kept.</span></div><div class="craft-rules"><div class="craft-rule" id="craftAtkRule"><label class="craft-rule-name"><input id="craftAtkEnabled" type="checkbox" checked> Attack bonus</label><label class="craft-rule-threshold">At least <input id="craftMinAtkPct" type="number" min="0" step="1" value="90" inputmode="decimal"><span>%</span></label><label class="craft-rule-operator">Combine<select id="craftAtkOperator"><option value="AND" selected>AND</option><option value="OR">OR</option></select></label></div><div class="craft-rule" id="craftSkillRule"><label class="craft-rule-name"><input id="craftSkillEnabled" type="checkbox" checked> Skill power</label><label class="craft-rule-threshold">At least <input id="craftMinSkillPower" type="number" min="0" step="1" value="40" inputmode="decimal"><span>%</span></label><label class="craft-rule-operator">Combine<select id="craftSkillOperator"><option value="AND" selected>AND</option><option value="OR">OR</option></select></label></div><div class="craft-rule craft-rule-disabled" id="craftHpRule"><label class="craft-rule-name"><input id="craftHpEnabled" type="checkbox"> HP bonus</label><label class="craft-rule-threshold">At least <input id="craftMinHpPct" type="number" min="0" step="1" value="90" inputmode="decimal"><span>%</span></label><label class="craft-rule-operator">Combine<select id="craftHpOperator"><option value="AND" selected>AND</option><option value="OR">OR</option></select></label></div></div><div class="craft-options"><label>Craft mode<select id="craftMode"><option value="both" selected>Gear and charm</option><option value="gear">Gear</option><option value="charm">Charm</option></select></label></div><div class="craft-actions"><button class="button" id="craftStart" type="button">Start crafting</button><button class="button" id="craftStop" type="button">Stop</button><span class="automation-status" id="craftStatus">Automation idle.</span></div></div><pre class="automation-log" id="craftLog" tabindex="0">Crafting log waiting.</pre></details>
       </section>
       <section class="section"><div class="section-head"><div class="label">Egg and awakening automation</div><div class="note">Opt-in; frequency is shared by all awakening actions</div></div><div class="egg-automation"><label><input type="checkbox" id="autoOpenUltra"> Auto-open eggs up to</label><select id="autoOpenRarity" aria-label="Maximum egg rarity"><option value="ultra" selected>Ultra</option><option value="legend">Legendary</option><option value="immortal">Immortal</option><option value="arcana">Arcana</option><option value="beyond">Beyond</option><option value="century">Century</option><option value="cosmic">Cosmic</option><option value="celestial">Celestial</option></select><label><input type="checkbox" id="autoCondenseUltra"> Awaken duplicate Ultra, Legendary, and Immortal monsters up to</label><select id="condenseMaxAwakening" aria-label="Maximum auto-condense awakening level"><option value="1">Awakening 1</option><option value="2">Awakening 2</option><option value="3">Awakening 3</option><option value="4">Awakening 4</option><option value="5">Awakening 5</option><option value="6" selected>Awakening 6</option></select><label>Tidy zero-awakening duplicates of<select id="tidyZeroAwakeningRarity" aria-label="Rarity for zero-awakening tidy-up"><option value="off" selected>Off</option><option value="common">Common</option><option value="rare">Rare</option><option value="ultra">Ultra</option><option value="legend">Legendary</option><option value="immortal">Immortal</option><option value="arcana">Arcana</option><option value="beyond">Beyond</option><option value="century">Century</option><option value="cosmic">Cosmic</option><option value="celestial">Celestial</option></select></label><label>Run every <input id="ultraAutomationFrequency" type="number" min="5" max="3600" step="1" value="15" inputmode="numeric"> seconds</label><span class="egg-automation-status" id="ultraAutomationStatus">Automation off</span></div></section>
       <section class="section"><div class="section-head"><div class="label">High-rarity leveling</div><div class="note">Runs stage 8-5 until every awakened Ultra, Legendary, and Immortal reaches level 90</div></div><div class="egg-automation"><label><input type="checkbox" id="autoLevelUltra"> Level Ultra, Legendary, and Immortal monsters to 90</label><span class="egg-automation-status" id="ultraLevelingStatus">Automation off</span></div><pre class="ultra-debug" id="ultraLevelingConsole" tabindex="0">High-rarity leveling console waiting.</pre></section>
-      <section class="section"><div class="section-head"><div class="label">Farm loop sequence</div><div class="note">Runs four non-boss Farm this stage clicks every 20 seconds</div></div><div class="egg-automation"><label><input type="checkbox" id="autoFarmSequence"> Repeat optimal farm sequence</label><span class="egg-automation-status" id="farmSequenceStatus">Automation off</span></div><pre class="ultra-debug" id="farmSequenceConsole" tabindex="0">Farm sequence waiting.</pre></section>
+      <section class="section"><div class="section-head"><div class="label">Farm loop sequence</div><div class="note">Runs four Farm this stage clicks every 20 seconds</div></div><div class="egg-automation"><label><input type="checkbox" id="autoFarmSequence"> Repeat optimal farm sequence</label><label><input type="checkbox" id="farmSequenceIncludeBoss"> Include boss level</label><span class="egg-automation-status" id="farmSequenceStatus">Automation off</span></div><pre class="ultra-debug" id="farmSequenceConsole" tabindex="0">Farm sequence waiting.</pre></section>
       <section class="section"><div class="section-head"><div class="label">Input syslog</div><div class="note" id="activeInputs">No active input process</div></div><pre class="syslog" id="syslog" tabindex="0">Input syslog waiting.</pre></section>
     </div>
     <p class="note warning" id="warning">Rates begin after the first two samples.</p>
@@ -398,34 +389,10 @@
       if (kpmChart) kpmChart.destroy();
       kpmChart = new Chart($("kpmChart"), { type: "line", data: { datasets: [{ label: "Kills per minute", data: samples.map((sample) => ({ x: sample.timestamp, y: sample.killsPerMinute })), borderColor: "#146fba", backgroundColor: "rgba(20,111,186,.12)", fill: true, tension: .15, pointRadius: 0, pointHoverRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, animation: false, parsing: false, interaction: { mode: "nearest", intersect: false }, plugins: { legend: { labels: { color: "#10213b", font: { family: "Consolas" } } }, tooltip: { callbacks: { title: (items) => items[0]?.raw?.x ? new Date(Number(items[0].raw.x)).toLocaleString() : "", label: (context) => `KPM: ${number(context.raw.y, 2)}` } } }, scales: { x: { type: "linear", min: Math.min(first, last - 3600000), max: Math.max(last, first + 3600000), ticks: { color: "#425775", maxRotation: 0, maxTicksLimit: 8, callback: (value) => formatTime(value) }, grid: { color: "rgba(9,47,91,.12)" }, title: { display: true, text: "Local time", color: "#425775" } }, y: { beginAtZero: true, ticks: { color: "#425775" }, grid: { color: "rgba(9,47,91,.12)" }, title: { display: true, text: "Kills per minute", color: "#425775" } } } } });
     }
-    const turboTargetStorageKey = "tasmon-turbo-target-kpm";
-    const turboTargetInput = $("turboTargetKpm");
-    const storedTurboTarget = Number(localStorage.getItem(turboTargetStorageKey));
-    if (Number.isFinite(storedTurboTarget) && storedTurboTarget > 0) turboTargetInput.value = storedTurboTarget;
-    const turboTargetKpm = () => Math.max(1, Number(turboTargetInput.value) || 1000);
-    const renderTurboTarget = () => { turboTargetInput.value = turboTargetKpm(); localStorage.setItem(turboTargetStorageKey, String(turboTargetKpm())); };
-    turboTargetInput.addEventListener("change", renderTurboTarget);
-    const turboIntervalMs = 10000;
-    let turboController = null;
-    let latestLiveData = null;
-    let turboPulseBusy = false;
-    async function pulseTurboIfNeeded(force = false) {
-      if (turboPulseBusy || !turboController) return;
-      const kpm = Number(latestLiveData?.rates?.killsPerMinute ?? 0);
-      if (!force && kpm >= turboTargetKpm()) return;
-      turboPulseBusy = true;
-      try {
-        await fetch("/api/turbo", { method: "POST" });
-        await refresh();
-      } finally {
-        turboPulseBusy = false;
-      }
-    }
     async function refresh() {
       try {
         const response = await fetch(`/api/live?t=${Date.now()}`, { cache: "no-store" });
         const data = await response.json();
-        latestLiveData = data;
         renderKpmChart(data.kpmHistory);
         const latest = data.latest;
         const reportSignature = JSON.stringify(latest?.report ?? null);
@@ -440,21 +407,6 @@
         renderCrafting(data.crafting);
         renderSyslog(data.syslog, data.activeInputs, data.queuedInputs);
         if (etchingData?.running || etchingPollingUntil > Date.now()) loadEtching().catch(() => {});
-        if (data.turbo !== true && turboController) {
-          clearInterval(turboController);
-          turboController = null;
-          turboPulseBusy = false;
-        }
-        $("turboPulse").classList.toggle("turbo-active", data.turbo === true);
-        $("turboPulse").textContent = data.turbo === true ? "Turbo running" : "Start Turbo";
-        $("turboExperimental").checked = data.turboExperimental === true;
-        $("turboVerbose").checked = data.turboVerbose === true;
-        $("turboPhase").textContent = `Phase ${data.turboPhase ?? "idle"}`;
-        $("turboStack").textContent = `Layers ${data.turboStack ?? 0}`;
-        $("turboKeys").textContent = `Keys ${data.turboKeys ?? 0}/9`;
-        $("turboConsole").textContent = (data.turboLog ?? []).length
-          ? data.turboLog.map((entry) => `${new Date(entry.at).toLocaleTimeString()} | layer ${entry.stack} | ${entry.action}${entry.phase ? ` | ${entry.phase} | keys ${entry.keyCount} | target ${entry.target}` : ""}${entry.telemetry ? ` | ${JSON.stringify(entry.telemetry)}${entry.liveEnemies != null ? ` | liveEnemies ${entry.liveEnemies}` : ""}` : ""}`).join("\n")
-          : "Turbo console waiting.";
         $("status").classList.toggle("offline", !data.connected);
         $("status").innerHTML = `<span class="status-dot"></span><small>${data.connected ? "LIVE / READ-ONLY" : "OFFLINE"}</small>`;
         $("goldRate").textContent = `${number(data.rates.grossGoldPerMinute)} G`;
@@ -494,11 +446,7 @@
         }
         $("warning").textContent = data.error
           ? data.error
-          : data.turboLastError
-            ? `Turbo refresh error: ${data.turboLastError}`
-            : data.turbo === true
-              ? `Turbo refreshes: ${data.turboRefreshCount ?? 0}; last action: ${data.turboLastAction ?? "none"}`
-              : data.elapsedMs < 2000 ? "Rates begin after the first two samples." : "Rates use a 30-second EMA. Gross gold counts positive gold deltas; net gold includes spending.";
+          : data.elapsedMs < 2000 ? "Rates begin after the first two samples." : "Rates use a 30-second EMA. Gross gold counts positive gold deltas; net gold includes spending.";
         $("warning").classList.toggle("error", Boolean(data.error));
       } catch (error) { $("warning").textContent = error.message; $("warning").classList.add("error"); }
     }
@@ -699,7 +647,7 @@
       farmSequenceBusy = true;
       $("farmSequenceStatus").textContent = "Running...";
       try {
-        const response = await fetch("/api/farm-sequence", { method: "POST" });
+        const response = await fetch("/api/farm-sequence", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ includeBoss: $("farmSequenceIncludeBoss").checked }) });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error ?? `Unable to run farm sequence (HTTP ${response.status})`);
         $("farmSequenceStatus").textContent = `Complete · stage ${data.stage ?? "--"}`;
@@ -781,35 +729,6 @@
       document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.toggle("active", panel.id === tab.dataset.tab));
     }));
     $("reset").addEventListener("click", async () => { await fetch("/api/reset", { method: "POST" }); refresh(); });
-    $("turboPulse").addEventListener("click", async () => {
-      if (turboController) return;
-      turboController = setInterval(() => pulseTurboIfNeeded(), turboIntervalMs);
-      await pulseTurboIfNeeded(true);
-    });
-    $("turboStop").addEventListener("click", async () => {
-      if (turboController) clearInterval(turboController);
-      turboController = null;
-      await fetch("/api/turbo/stop", { method: "POST" });
-      refresh();
-    });
-    $("turboExperimentReset").addEventListener("click", async () => {
-      if (turboController) clearInterval(turboController);
-      turboController = null;
-      const response = await fetch("/api/turbo/experiment/reset", { method: "POST" });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? `Unable to restart game (HTTP ${response.status})`);
-      $("turboConsole").textContent = "Experiment reset; game reloading...";
-    });
-    async function updateTurboExperimental() {
-      const response = await fetch("/api/turbo/experimental", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: $("turboExperimental").checked, verbose: $("turboVerbose").checked }) });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? `Unable to update turbo experimental mode (HTTP ${response.status})`);
-      $("turboExperimental").checked = data.experimental === true;
-      $("turboVerbose").checked = data.verbose === true;
-      refresh();
-    }
-    $("turboExperimental").addEventListener("change", () => updateTurboExperimental().catch((error) => { $("turboExperimental").checked = !$("turboExperimental").checked; $("turboConsole").textContent += `\nError: ${error.message}`; }));
-    $("turboVerbose").addEventListener("change", () => updateTurboExperimental().catch((error) => { $("turboVerbose").checked = !$("turboVerbose").checked; $("turboConsole").textContent += `\nError: ${error.message}`; }));
     refresh(); setInterval(refresh, 1000);
   </script>
 </body>
